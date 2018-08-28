@@ -1,0 +1,34 @@
+dist: trusty
+sudo: false
+language: rust
+
+cache:
+  - apt: true
+  - cargo: true
+
+branches:
+  only:
+    - master
+    - /^\d+\.\d+\.x$/
+
+matrix:
+  allow_failures:
+    - rust: nightly
+  include:
+    - rust: nightly-2018-08-14
+    - rust: nightly
+    - rust: nightly-2018-08-14
+      env: DEPLOY_API_DOC
+      script:
+        - cargo clean
+        - cargo doc
+        - rm -f target/doc/.lock
+      deploy:
+        provider: pages
+        skip_cleanup: true
+        github_token: $GH_TOKEN
+        repo: finchers-rs/finchers-juniper
+        target_branch: gh-pages
+        local_dir: target/doc
+        on:
+          branch: master

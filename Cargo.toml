@@ -1,0 +1,17 @@
+[package]
+name = "finchers-juniper"
+version = "0.0.1"
+authors = ["Yusuke Sasaki <yusuke.sasaki.nuem@gmail.com>"]
+publish = false
+
+[dependencies]
+finchers = "0.12.0-alpha.2"
+
+bytes = "0.4.9"
+futures-preview = { version = "0.3.0-alpha.3", features = ["tokio-compat"] }
+http = "0.1.10"
+juniper = { git = "https://github.com/graphql-rust/juniper.git", branch = "master" }
+pin-utils = "0.1.0-alpha.1"
+serde_json = "1.0.26"
+tokio = "0.1.8"
+tokio-threadpool = "0.1.6"
