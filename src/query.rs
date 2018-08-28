@@ -22,6 +22,26 @@ use tokio_threadpool::blocking;
 
 use crate::maybe_done::MaybeDone;
 
+/// Creates an endpoint which handles a GraphQL request.
+///
+/// The endpoint contains a `RootNode` associated with a type `CtxT`,
+/// and an endpoint which returns the value of `CtxT`.
+/// Within `context_endpoint`, the authentication process and establishing
+/// the DB connection (and so on) can be executed.
+///
+/// The future returned by this endpoint will wait for the reception of
+/// the GraphQL request and the preparation of `CtxT` to be completed,
+/// and then transition to the blocking state using tokio's blocking API
+/// and executes the GraphQL request on the current thread.
+///
+/// # Examples
+///
+/// ```ignore
+/// let acquire_ctx = ...;
+///
+/// let query_endpoint = route!(/ "query")
+///     .and(finchers_juniper::query(schema, acquire_ctx));
+/// ```
 pub fn query<QueryT, MutationT, CtxT, E>(
     root_node: RootNode<'static, QueryT, MutationT>,
     context_endpoint: E,
@@ -37,6 +57,7 @@ where
     }
 }
 
+#[allow(missing_docs)]
 pub struct Query<QueryT, MutationT, CtxT, E>
 where
     QueryT: GraphQLType<Context = CtxT>,
@@ -67,7 +88,6 @@ where
     }
 }
 
-#[doc(hidden)]
 pub struct QueryFuture<'a, QueryT, MutationT, CtxT, R>
 where
     QueryT: GraphQLType<Context = CtxT> + 'a,
