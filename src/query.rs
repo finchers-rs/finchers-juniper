@@ -1,7 +1,8 @@
-use finchers::endpoint::{Context, Endpoint, EndpointResult};
+use finchers::endpoint::{unit, Context, Endpoint, EndpointExt, EndpointResult};
 use finchers::endpoints::{body, method};
 use finchers::error;
 use finchers::error::{Error, Never};
+use finchers::input::with_get_cx;
 use finchers::output::payload::Once;
 use finchers::output::{Output, OutputContext};
 
@@ -14,9 +15,12 @@ use futures::try_ready;
 use pin_utils::unsafe_pinned;
 
 use juniper::http::GraphQLRequest;
-use juniper::{GraphQLType, RootNode};
+use juniper::{GraphQLType, InputValue, RootNode};
 
-use http::{header, Response, StatusCode};
+use failure::SyncFailure;
+use http::{header, Method, Response, StatusCode};
+use percent_encoding::percent_decode;
+use serde::Deserialize;
 use tokio::prelude::Async as Async01;
 use tokio_threadpool::blocking;
 
@@ -78,8 +82,16 @@ where
     type Future = QueryFuture<'a, QueryT, MutationT, CtxT, E::Future>;
 
     fn apply(&'a self, cx: &mut Context) -> EndpointResult<Self::Future> {
-        let request = method::post(body::json()).apply(cx)?;
+        let _ = method::get(unit()).or(method::post(unit())).apply(cx)?;
+
+        let request = if cx.input().method() == Method::GET {
+            RequestType::Get
+        } else {
+            RequestType::Post(body::json().apply(cx)?)
+        };
+
         let context = self.context_endpoint.apply(cx)?;
+
         Ok(QueryFuture {
             root_node: &self.root_node,
             request: MaybeDone::new(request),
@@ -95,8 +107,77 @@ where
     R: TryFuture<Ok = (CtxT,), Error = Error> + 'a,
 {
     root_node: &'a RootNode<'static, QueryT, MutationT>,
-    request: MaybeDone<<body::Json<GraphQLRequest> as Endpoint<'a>>::Future>,
+    request: MaybeDone<RequestType<'a>>,
     context: MaybeDone<R>,
+}
+
+#[derive(Debug)]
+enum RequestType<'a> {
+    Get,
+    Post(<body::Json<GraphQLRequest> as Endpoint<'a>>::Future),
+}
+
+impl<'a> Future for RequestType<'a> {
+    type Output = Result<GraphQLRequest, Error>;
+
+    fn poll(self: PinMut<Self>, cx: &mut task::Context) -> Poll<Self::Output> {
+        match unsafe { PinMut::get_mut_unchecked(self) } {
+            RequestType::Get => Poll::Ready(with_get_cx(|input| {
+                let s = input
+                    .uri()
+                    .query()
+                    .ok_or_else(|| error::bad_request("missing query string"))?;
+                parse_query_string(s)
+            })),
+            RequestType::Post(ref mut f) => unsafe { PinMut::new_unchecked(f) }
+                .try_poll(cx)
+                .map_ok(|(request,)| request),
+        }
+    }
+}
+
+fn parse_query_string(s: &str) -> Result<GraphQLRequest, Error> {
+    #[derive(Debug, Deserialize)]
+    struct ParsedQuery<'a> {
+        #[serde(borrow)]
+        query: &'a str,
+        #[serde(borrow)]
+        operation_name: Option<&'a str>,
+        #[serde(borrow)]
+        variables: Option<&'a str>,
+    }
+
+    let parsed: ParsedQuery =
+        serde_qs::from_str(s).map_err(|e| error::fail(SyncFailure::new(e)))?;
+
+    let query = percent_decode(parsed.query.as_bytes())
+        .decode_utf8()
+        .map_err(error::bad_request)?
+        .into_owned();
+
+    let operation_name = match parsed.operation_name {
+        Some(s) => Some(
+            percent_decode(s.as_bytes())
+                .decode_utf8()
+                .map_err(error::bad_request)?
+                .into_owned(),
+        ),
+        None => None,
+    };
+
+    let variables: Option<InputValue> = match parsed.variables {
+        Some(variables) => {
+            let decoded = percent_decode(variables.as_bytes())
+                .decode_utf8()
+                .map_err(error::bad_request)?;
+            serde_json::from_str(&*decoded)
+                .map(Some)
+                .map_err(error::bad_request)?
+        }
+        None => None,
+    };
+
+    Ok(GraphQLRequest::new(query, operation_name, variables))
 }
 
 impl<'a, QueryT, MutationT, CtxT, R> QueryFuture<'a, QueryT, MutationT, CtxT, R>
@@ -105,11 +186,11 @@ where
     MutationT: GraphQLType<Context = CtxT> + 'a,
     R: TryFuture<Ok = (CtxT,), Error = Error> + 'a,
 {
-    unsafe_pinned!(request: MaybeDone<<body::Json<GraphQLRequest> as Endpoint<'a>>::Future>);
+    unsafe_pinned!(request: MaybeDone<RequestType<'a>>);
     unsafe_pinned!(context: MaybeDone<R>);
 
     fn execute(mut self: PinMut<Self>) -> Result<QueryResponse, serde_json::Error> {
-        let (request,) = self.request().take_ok().unwrap();
+        let request = self.request().take_ok().unwrap();
         let (context,) = self.context().take_ok().unwrap();
         let response = request.execute(self.root_node, &context);
         Ok(QueryResponse {

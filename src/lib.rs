@@ -2,11 +2,14 @@
 #![feature(pin, futures_api, arbitrary_self_types)]
 
 extern crate bytes;
+extern crate failure;
 extern crate finchers;
 extern crate futures;
 extern crate http;
 extern crate juniper;
+extern crate percent_encoding;
 extern crate pin_utils;
+extern crate serde;
 extern crate tokio;
 extern crate tokio_threadpool;
 
