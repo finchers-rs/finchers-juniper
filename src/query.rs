@@ -1,8 +1,6 @@
-use finchers::endpoint::{unit, Context, Endpoint, EndpointExt, EndpointResult};
-use finchers::endpoints::{body, method};
+use finchers::endpoint::{Context, Endpoint, EndpointResult};
 use finchers::error;
 use finchers::error::{Error, Never};
-use finchers::input::with_get_cx;
 use finchers::output::payload::Once;
 use finchers::output::{Output, OutputContext};
 
@@ -14,17 +12,14 @@ use futures::future::{Future, TryFuture};
 use futures::try_ready;
 use pin_utils::unsafe_pinned;
 
-use juniper::http::GraphQLRequest;
-use juniper::{GraphQLType, InputValue, RootNode};
+use juniper::{GraphQLType, RootNode};
 
-use failure::SyncFailure;
-use http::{header, Method, Response, StatusCode};
-use percent_encoding::percent_decode;
-use serde::Deserialize;
+use http::{header, Response, StatusCode};
 use tokio::prelude::Async as Async01;
 use tokio_threadpool::blocking;
 
 use crate::maybe_done::MaybeDone;
+use crate::request::{request, BatchRequest, GraphQLRequest, GraphQLRequestFuture};
 
 /// Creates an endpoint which handles a GraphQL request.
 ///
@@ -46,165 +41,104 @@ use crate::maybe_done::MaybeDone;
 /// let query_endpoint = route!(/ "query")
 ///     .and(finchers_juniper::query(schema, acquire_ctx));
 /// ```
-pub fn query<QueryT, MutationT, CtxT, E>(
-    root_node: RootNode<'static, QueryT, MutationT>,
+pub fn query<E, QueryT, MutationT, CtxT>(
     context_endpoint: E,
-) -> Query<QueryT, MutationT, CtxT, E>
+    root_node: RootNode<'static, QueryT, MutationT>,
+) -> Query<E, QueryT, MutationT, CtxT>
 where
+    for<'a> E: Endpoint<'a, Output = (CtxT,)>,
     QueryT: GraphQLType<Context = CtxT>,
     MutationT: GraphQLType<Context = CtxT>,
-    for<'a> E: Endpoint<'a, Output = (CtxT,)>,
 {
     Query {
         root_node,
         context_endpoint,
+        request_endpoint: request(),
     }
 }
 
 #[allow(missing_docs)]
-pub struct Query<QueryT, MutationT, CtxT, E>
+pub struct Query<E, QueryT, MutationT, CtxT>
 where
     QueryT: GraphQLType<Context = CtxT>,
     MutationT: GraphQLType<Context = CtxT>,
 {
     root_node: RootNode<'static, QueryT, MutationT>,
     context_endpoint: E,
+    request_endpoint: GraphQLRequest,
 }
 
-impl<'a, QueryT, MutationT, CtxT, E> Endpoint<'a> for Query<QueryT, MutationT, CtxT, E>
+impl<'a, E, QueryT, MutationT, CtxT> Endpoint<'a> for Query<E, QueryT, MutationT, CtxT>
 where
+    E: Endpoint<'a, Output = (CtxT,)>,
+    CtxT: 'a,
     QueryT: GraphQLType<Context = CtxT> + 'a,
     MutationT: GraphQLType<Context = CtxT> + 'a,
-    CtxT: 'a,
-    E: Endpoint<'a, Output = (CtxT,)>,
 {
     type Output = (QueryResponse,);
-    type Future = QueryFuture<'a, QueryT, MutationT, CtxT, E::Future>;
+    type Future = QueryFuture<'a, E::Future, QueryT, MutationT, CtxT>;
 
     fn apply(&'a self, cx: &mut Context) -> EndpointResult<Self::Future> {
-        let _ = method::get(unit()).or(method::post(unit())).apply(cx)?;
-
-        let request = if cx.input().method() == Method::GET {
-            RequestType::Get
-        } else {
-            RequestType::Post(body::json().apply(cx)?)
-        };
-
+        let request = self.request_endpoint.apply(cx)?;
         let context = self.context_endpoint.apply(cx)?;
-
         Ok(QueryFuture {
-            root_node: &self.root_node,
             request: MaybeDone::new(request),
             context: MaybeDone::new(context),
+            root_node: &self.root_node,
         })
     }
 }
 
-pub struct QueryFuture<'a, QueryT, MutationT, CtxT, R>
+pub struct QueryFuture<'a, F, QueryT, MutationT, CtxT>
 where
+    F: TryFuture<Ok = (CtxT,), Error = Error> + 'a,
     QueryT: GraphQLType<Context = CtxT> + 'a,
     MutationT: GraphQLType<Context = CtxT> + 'a,
-    R: TryFuture<Ok = (CtxT,), Error = Error> + 'a,
 {
+    context: MaybeDone<F>,
+    request: MaybeDone<GraphQLRequestFuture<'a>>,
     root_node: &'a RootNode<'static, QueryT, MutationT>,
-    request: MaybeDone<RequestType<'a>>,
-    context: MaybeDone<R>,
 }
 
-#[derive(Debug)]
-enum RequestType<'a> {
-    Get,
-    Post(<body::Json<GraphQLRequest> as Endpoint<'a>>::Future),
-}
-
-impl<'a> Future for RequestType<'a> {
-    type Output = Result<GraphQLRequest, Error>;
-
-    fn poll(self: PinMut<Self>, cx: &mut task::Context) -> Poll<Self::Output> {
-        match unsafe { PinMut::get_mut_unchecked(self) } {
-            RequestType::Get => Poll::Ready(with_get_cx(|input| {
-                let s = input
-                    .uri()
-                    .query()
-                    .ok_or_else(|| error::bad_request("missing query string"))?;
-                parse_query_string(s)
-            })),
-            RequestType::Post(ref mut f) => unsafe { PinMut::new_unchecked(f) }
-                .try_poll(cx)
-                .map_ok(|(request,)| request),
-        }
-    }
-}
-
-fn parse_query_string(s: &str) -> Result<GraphQLRequest, Error> {
-    #[derive(Debug, Deserialize)]
-    struct ParsedQuery<'a> {
-        #[serde(borrow)]
-        query: &'a str,
-        #[serde(borrow)]
-        operation_name: Option<&'a str>,
-        #[serde(borrow)]
-        variables: Option<&'a str>,
-    }
-
-    let parsed: ParsedQuery =
-        serde_qs::from_str(s).map_err(|e| error::fail(SyncFailure::new(e)))?;
-
-    let query = percent_decode(parsed.query.as_bytes())
-        .decode_utf8()
-        .map_err(error::bad_request)?
-        .into_owned();
-
-    let operation_name = match parsed.operation_name {
-        Some(s) => Some(
-            percent_decode(s.as_bytes())
-                .decode_utf8()
-                .map_err(error::bad_request)?
-                .into_owned(),
-        ),
-        None => None,
-    };
-
-    let variables: Option<InputValue> = match parsed.variables {
-        Some(variables) => {
-            let decoded = percent_decode(variables.as_bytes())
-                .decode_utf8()
-                .map_err(error::bad_request)?;
-            serde_json::from_str(&*decoded)
-                .map(Some)
-                .map_err(error::bad_request)?
-        }
-        None => None,
-    };
-
-    Ok(GraphQLRequest::new(query, operation_name, variables))
-}
-
-impl<'a, QueryT, MutationT, CtxT, R> QueryFuture<'a, QueryT, MutationT, CtxT, R>
+impl<'a, F, QueryT, MutationT, CtxT> QueryFuture<'a, F, QueryT, MutationT, CtxT>
 where
+    F: TryFuture<Ok = (CtxT,), Error = Error> + 'a,
     QueryT: GraphQLType<Context = CtxT> + 'a,
     MutationT: GraphQLType<Context = CtxT> + 'a,
-    R: TryFuture<Ok = (CtxT,), Error = Error> + 'a,
 {
-    unsafe_pinned!(request: MaybeDone<RequestType<'a>>);
-    unsafe_pinned!(context: MaybeDone<R>);
+    unsafe_pinned!(context: MaybeDone<F>);
+    unsafe_pinned!(request: MaybeDone<GraphQLRequestFuture<'a>>);
 
     fn execute(mut self: PinMut<Self>) -> Result<QueryResponse, serde_json::Error> {
-        let request = self.request().take_ok().unwrap();
+        let (request,) = self.request().take_ok().unwrap();
         let (context,) = self.context().take_ok().unwrap();
-        let response = request.execute(self.root_node, &context);
-        Ok(QueryResponse {
-            is_ok: response.is_ok(),
-            body: serde_json::to_vec(&response)?,
-        })
+        match request {
+            BatchRequest::Single(ref request) => {
+                let response = request.execute(self.root_node, &context);
+                Ok(QueryResponse {
+                    is_ok: response.is_ok(),
+                    body: serde_json::to_vec(&response)?,
+                })
+            }
+            BatchRequest::Batch(ref requests) => {
+                let responses: Vec<_> = requests
+                    .iter()
+                    .map(|request| request.execute(self.root_node, &context))
+                    .collect();
+                Ok(QueryResponse {
+                    is_ok: responses.iter().all(|response| response.is_ok()),
+                    body: serde_json::to_vec(&responses)?,
+                })
+            }
+        }
     }
 }
 
-impl<'a, QueryT, MutationT, CtxT, R> Future for QueryFuture<'a, QueryT, MutationT, CtxT, R>
+impl<'a, F, QueryT, MutationT, CtxT> Future for QueryFuture<'a, F, QueryT, MutationT, CtxT>
 where
+    F: TryFuture<Ok = (CtxT,), Error = Error> + 'a,
     QueryT: GraphQLType<Context = CtxT> + 'a,
     MutationT: GraphQLType<Context = CtxT> + 'a,
-    R: TryFuture<Ok = (CtxT,), Error = Error> + 'a,
 {
     type Output = Result<(QueryResponse,), Error>;
 
