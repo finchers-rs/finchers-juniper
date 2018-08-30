@@ -1,8 +1,6 @@
 use finchers::endpoint::{Context, Endpoint, EndpointResult};
 use finchers::error;
-use finchers::error::{Error, Never};
-use finchers::output::payload::Once;
-use finchers::output::{Output, OutputContext};
+use finchers::error::Error;
 
 use std::mem::PinMut;
 use std::task;
@@ -14,12 +12,11 @@ use pin_utils::unsafe_pinned;
 
 use juniper::{GraphQLType, RootNode};
 
-use http::{header, Response, StatusCode};
 use tokio::prelude::Async as Async01;
 use tokio_threadpool::blocking;
 
 use crate::maybe_done::MaybeDone;
-use crate::request::{request, BatchRequest, GraphQLRequest, GraphQLRequestFuture};
+use crate::request::{request, GraphQLResponse, RequestEndpoint, RequestFuture};
 
 /// Creates an endpoint which handles a GraphQL request.
 ///
@@ -65,7 +62,7 @@ where
 {
     root_node: RootNode<'static, QueryT, MutationT>,
     context_endpoint: E,
-    request_endpoint: GraphQLRequest,
+    request_endpoint: RequestEndpoint,
 }
 
 impl<'a, E, QueryT, MutationT, CtxT> Endpoint<'a> for Query<E, QueryT, MutationT, CtxT>
@@ -75,7 +72,7 @@ where
     QueryT: GraphQLType<Context = CtxT> + 'a,
     MutationT: GraphQLType<Context = CtxT> + 'a,
 {
-    type Output = (QueryResponse,);
+    type Output = (GraphQLResponse,);
     type Future = QueryFuture<'a, E::Future, QueryT, MutationT, CtxT>;
 
     fn apply(&'a self, cx: &mut Context) -> EndpointResult<Self::Future> {
@@ -96,7 +93,7 @@ where
     MutationT: GraphQLType<Context = CtxT> + 'a,
 {
     context: MaybeDone<F>,
-    request: MaybeDone<GraphQLRequestFuture<'a>>,
+    request: MaybeDone<RequestFuture<'a>>,
     root_node: &'a RootNode<'static, QueryT, MutationT>,
 }
 
@@ -107,31 +104,7 @@ where
     MutationT: GraphQLType<Context = CtxT> + 'a,
 {
     unsafe_pinned!(context: MaybeDone<F>);
-    unsafe_pinned!(request: MaybeDone<GraphQLRequestFuture<'a>>);
-
-    fn execute(mut self: PinMut<Self>) -> Result<QueryResponse, serde_json::Error> {
-        let (request,) = self.request().take_ok().unwrap();
-        let (context,) = self.context().take_ok().unwrap();
-        match request {
-            BatchRequest::Single(ref request) => {
-                let response = request.execute(self.root_node, &context);
-                Ok(QueryResponse {
-                    is_ok: response.is_ok(),
-                    body: serde_json::to_vec(&response)?,
-                })
-            }
-            BatchRequest::Batch(ref requests) => {
-                let responses: Vec<_> = requests
-                    .iter()
-                    .map(|request| request.execute(self.root_node, &context))
-                    .collect();
-                Ok(QueryResponse {
-                    is_ok: responses.iter().all(|response| response.is_ok()),
-                    body: serde_json::to_vec(&responses)?,
-                })
-            }
-        }
-    }
+    unsafe_pinned!(request: MaybeDone<RequestFuture<'a>>);
 }
 
 impl<'a, F, QueryT, MutationT, CtxT> Future for QueryFuture<'a, F, QueryT, MutationT, CtxT>
@@ -140,40 +113,19 @@ where
     QueryT: GraphQLType<Context = CtxT> + 'a,
     MutationT: GraphQLType<Context = CtxT> + 'a,
 {
-    type Output = Result<(QueryResponse,), Error>;
+    type Output = Result<(GraphQLResponse,), Error>;
 
     fn poll(mut self: PinMut<Self>, cx: &mut task::Context) -> Poll<Self::Output> {
         try_ready!(self.request().poll_ready(cx));
         try_ready!(self.context().poll_ready(cx));
-        match blocking(move || self.execute()) {
-            Ok(Async01::Ready(Ok(response))) => Poll::Ready(Ok((response,))),
-            Ok(Async01::Ready(Err(err))) => Poll::Ready(Err(error::fail(err))),
+        match blocking(move || {
+            let (request,) = self.request().take_ok().unwrap();
+            let (context,) = self.context().take_ok().unwrap();
+            request.execute(self.root_node, &context)
+        }) {
+            Ok(Async01::Ready(response)) => Poll::Ready(Ok((response,))),
             Ok(Async01::NotReady) => Poll::Pending,
             Err(err) => Poll::Ready(Err(error::fail(err))),
         }
-    }
-}
-
-#[derive(Debug)]
-pub struct QueryResponse {
-    is_ok: bool,
-    body: Vec<u8>,
-}
-
-impl Output for QueryResponse {
-    type Body = Once<Vec<u8>>;
-    type Error = Never;
-
-    fn respond(self, _: &mut OutputContext) -> Result<Response<Self::Body>, Self::Error> {
-        let status = if self.is_ok {
-            StatusCode::OK
-        } else {
-            StatusCode::BAD_REQUEST
-        };
-        Ok(Response::builder()
-            .status(status)
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(Once::new(self.body))
-            .expect("valid response"))
     }
 }

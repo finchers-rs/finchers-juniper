@@ -22,4 +22,4 @@ mod request;
 
 pub use crate::graphiql::{graphiql, GraphiQL};
 pub use crate::query::{query, Query};
-pub use crate::request::{request, BatchRequest, GraphQLRequest};
+pub use crate::request::{request, GraphQLRequest, GraphQLResponse, RequestEndpoint};
