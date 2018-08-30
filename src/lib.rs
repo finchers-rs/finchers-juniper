@@ -15,11 +15,11 @@ extern crate serde;
 extern crate tokio;
 extern crate tokio_threadpool;
 
+mod execute;
 mod graphiql;
 mod maybe_done;
-mod query;
 mod request;
 
+pub use crate::execute::{execute, Execute};
 pub use crate::graphiql::{graphiql, GraphiQL};
-pub use crate::query::{query, Query};
 pub use crate::request::{request, GraphQLRequest, GraphQLResponse, RequestEndpoint};

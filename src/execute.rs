@@ -34,20 +34,21 @@ use crate::request::{request, GraphQLResponse, RequestEndpoint, RequestFuture};
 ///
 /// ```ignore
 /// let acquire_ctx = ...;
+/// let schema = ...;
 ///
 /// let query_endpoint = route!(/ "query")
-///     .and(finchers_juniper::query(schema, acquire_ctx));
+///     .and(finchers_juniper::execute(acquire_ctx, schema));
 /// ```
-pub fn query<E, QueryT, MutationT, CtxT>(
+pub fn execute<E, QueryT, MutationT, CtxT>(
     context_endpoint: E,
     root_node: RootNode<'static, QueryT, MutationT>,
-) -> Query<E, QueryT, MutationT, CtxT>
+) -> Execute<E, QueryT, MutationT, CtxT>
 where
     for<'a> E: Endpoint<'a, Output = (CtxT,)>,
     QueryT: GraphQLType<Context = CtxT>,
     MutationT: GraphQLType<Context = CtxT>,
 {
-    Query {
+    Execute {
         root_node,
         context_endpoint,
         request_endpoint: request(),
@@ -55,7 +56,7 @@ where
 }
 
 #[allow(missing_docs)]
-pub struct Query<E, QueryT, MutationT, CtxT>
+pub struct Execute<E, QueryT, MutationT, CtxT>
 where
     QueryT: GraphQLType<Context = CtxT>,
     MutationT: GraphQLType<Context = CtxT>,
@@ -65,7 +66,7 @@ where
     request_endpoint: RequestEndpoint,
 }
 
-impl<'a, E, QueryT, MutationT, CtxT> Endpoint<'a> for Query<E, QueryT, MutationT, CtxT>
+impl<'a, E, QueryT, MutationT, CtxT> Endpoint<'a> for Execute<E, QueryT, MutationT, CtxT>
 where
     E: Endpoint<'a, Output = (CtxT,)>,
     CtxT: 'a,
@@ -73,12 +74,12 @@ where
     MutationT: GraphQLType<Context = CtxT> + 'a,
 {
     type Output = (GraphQLResponse,);
-    type Future = QueryFuture<'a, E::Future, QueryT, MutationT, CtxT>;
+    type Future = ExecuteFuture<'a, E::Future, QueryT, MutationT, CtxT>;
 
     fn apply(&'a self, cx: &mut Context) -> EndpointResult<Self::Future> {
         let request = self.request_endpoint.apply(cx)?;
         let context = self.context_endpoint.apply(cx)?;
-        Ok(QueryFuture {
+        Ok(ExecuteFuture {
             request: MaybeDone::new(request),
             context: MaybeDone::new(context),
             root_node: &self.root_node,
@@ -86,7 +87,7 @@ where
     }
 }
 
-pub struct QueryFuture<'a, F, QueryT, MutationT, CtxT>
+pub struct ExecuteFuture<'a, F, QueryT, MutationT, CtxT>
 where
     F: TryFuture<Ok = (CtxT,), Error = Error> + 'a,
     QueryT: GraphQLType<Context = CtxT> + 'a,
@@ -97,7 +98,7 @@ where
     root_node: &'a RootNode<'static, QueryT, MutationT>,
 }
 
-impl<'a, F, QueryT, MutationT, CtxT> QueryFuture<'a, F, QueryT, MutationT, CtxT>
+impl<'a, F, QueryT, MutationT, CtxT> ExecuteFuture<'a, F, QueryT, MutationT, CtxT>
 where
     F: TryFuture<Ok = (CtxT,), Error = Error> + 'a,
     QueryT: GraphQLType<Context = CtxT> + 'a,
@@ -107,7 +108,7 @@ where
     unsafe_pinned!(request: MaybeDone<RequestFuture<'a>>);
 }
 
-impl<'a, F, QueryT, MutationT, CtxT> Future for QueryFuture<'a, F, QueryT, MutationT, CtxT>
+impl<'a, F, QueryT, MutationT, CtxT> Future for ExecuteFuture<'a, F, QueryT, MutationT, CtxT>
 where
     F: TryFuture<Ok = (CtxT,), Error = Error> + 'a,
     QueryT: GraphQLType<Context = CtxT> + 'a,
