@@ -16,44 +16,7 @@ use tokio::prelude::Async as Async01;
 use tokio_threadpool::blocking;
 
 use crate::maybe_done::MaybeDone;
-use crate::request::{request, GraphQLResponse, RequestEndpoint, RequestFuture};
-
-/// Creates an endpoint which handles a GraphQL request.
-///
-/// The endpoint contains a `RootNode` associated with a type `CtxT`,
-/// and an endpoint which returns the value of `CtxT`.
-/// Within `context_endpoint`, the authentication process and establishing
-/// the DB connection (and so on) can be executed.
-///
-/// The future returned by this endpoint will wait for the reception of
-/// the GraphQL request and the preparation of `CtxT` to be completed,
-/// and then transition to the blocking state using tokio's blocking API
-/// and executes the GraphQL request on the current thread.
-///
-/// # Examples
-///
-/// ```ignore
-/// let acquire_ctx = ...;
-/// let schema = ...;
-///
-/// let query_endpoint = route!(/ "query")
-///     .and(finchers_juniper::execute(acquire_ctx, schema));
-/// ```
-pub fn execute<E, QueryT, MutationT, CtxT>(
-    context_endpoint: E,
-    root_node: RootNode<'static, QueryT, MutationT>,
-) -> Execute<E, QueryT, MutationT, CtxT>
-where
-    for<'a> E: Endpoint<'a, Output = (CtxT,)>,
-    QueryT: GraphQLType<Context = CtxT>,
-    MutationT: GraphQLType<Context = CtxT>,
-{
-    Execute {
-        root_node,
-        context_endpoint,
-        request_endpoint: request(),
-    }
-}
+use crate::request::{GraphQLResponse, RequestEndpoint, RequestFuture};
 
 #[allow(missing_docs)]
 pub struct Execute<E, QueryT, MutationT, CtxT>
@@ -61,9 +24,9 @@ where
     QueryT: GraphQLType<Context = CtxT>,
     MutationT: GraphQLType<Context = CtxT>,
 {
-    root_node: RootNode<'static, QueryT, MutationT>,
-    context_endpoint: E,
-    request_endpoint: RequestEndpoint,
+    pub(super) root_node: RootNode<'static, QueryT, MutationT>,
+    pub(super) context_endpoint: E,
+    pub(super) request_endpoint: RequestEndpoint,
 }
 
 impl<'a, E, QueryT, MutationT, CtxT> Endpoint<'a> for Execute<E, QueryT, MutationT, CtxT>
