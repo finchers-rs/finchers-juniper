@@ -1,10 +1,10 @@
-use std::mem::PinMut;
-use std::task;
-use std::task::Poll;
+use std::pin::PinMut;
 
 use futures::future;
 use futures::future::{Future, TryFuture, TryFutureExt};
 use futures::ready;
+use futures::task;
+use futures::task::Poll;
 use pin_utils::unsafe_pinned;
 
 pub struct MaybeDone<F: TryFuture> {

@@ -7,11 +7,11 @@ use finchers::input::with_get_cx;
 use finchers::output::payload::Once;
 use finchers::output::{Output, OutputContext};
 
-use std::mem::PinMut;
-use std::task;
-use std::task::Poll;
+use std::pin::PinMut;
 
 use futures::future::{Future, TryFuture};
+use futures::task;
+use futures::task::Poll;
 use futures::try_ready;
 
 use juniper;

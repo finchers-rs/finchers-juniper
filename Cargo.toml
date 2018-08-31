@@ -12,11 +12,11 @@ finchers = { git = "https://github.com/finchers-rs/finchers.git", branch = "mast
 
 bytes = "0.4.9"
 failure = { version = "0.1.2", features = ["derive"] }
-futures-preview = { version = "0.3.0-alpha.3", features = ["tokio-compat"] }
+futures-preview = { git = "https://github.com/rust-lang-nursery/futures-rs.git", branch = "master", features = ["tokio-compat"] }
 http = "0.1.10"
 juniper = { git = "https://github.com/graphql-rust/juniper.git", branch = "master" }
 percent-encoding = "1.0.1"
-pin-utils = "0.1.0-alpha.1"
+pin-utils = "0.1.0-alpha.2"
 serde = { version = "1.0.75", features = ["derive"] }
 serde_json = "1.0.26"
 serde_qs = "0.4.1"

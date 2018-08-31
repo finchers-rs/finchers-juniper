@@ -2,11 +2,11 @@ use finchers::endpoint::{Context, Endpoint, EndpointResult};
 use finchers::error;
 use finchers::error::Error;
 
-use std::mem::PinMut;
-use std::task;
-use std::task::Poll;
+use std::pin::PinMut;
 
 use futures::future::{Future, TryFuture};
+use futures::task;
+use futures::task::Poll;
 use futures::try_ready;
 use pin_utils::unsafe_pinned;
 

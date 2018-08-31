@@ -3,12 +3,13 @@ use finchers::error::{Error, Never};
 use finchers::output::payload::Once;
 use finchers::output::{Output, OutputContext};
 
-use std::mem::PinMut;
-use std::task;
-use std::task::Poll;
+use std::pin::PinMut;
+
+use futures::future::Future;
+use futures::task;
+use futures::task::Poll;
 
 use bytes::Bytes;
-use futures::future::Future;
 use http::{header, Response};
 use juniper::http::graphiql::graphiql_source;
 
