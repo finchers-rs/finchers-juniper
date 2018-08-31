@@ -25,3 +25,8 @@ tokio-threadpool = "0.1.6"
 
 [build-dependencies]
 version_check = "0.1.4"
+
+[dev-dependencies.juniper]
+git = "https://github.com/graphql-rust/juniper.git"
+branch = "master"
+features = ["expose-test-schema", "serde_json"]

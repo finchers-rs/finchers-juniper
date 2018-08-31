@@ -126,13 +126,10 @@ enum BatchRequest {
 impl GraphQLRequest {
     pub fn from_query(s: &str) -> Result<GraphQLRequest, Error> {
         #[derive(Debug, Deserialize)]
-        struct ParsedQuery<'a> {
-            #[serde(borrow)]
-            query: &'a str,
-            #[serde(borrow)]
-            operation_name: Option<&'a str>,
-            #[serde(borrow)]
-            variables: Option<&'a str>,
+        struct ParsedQuery {
+            query: String,
+            operation_name: Option<String>,
+            variables: Option<String>,
         }
 
         let parsed: ParsedQuery =

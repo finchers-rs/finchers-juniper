@@ -63,6 +63,7 @@ pub trait EndpointGraphQLExt<'a>: Endpoint<'a> + Sized {
             context_endpoint: self,
             request_endpoint: crate::request::request(),
             root_node,
+            use_blocking: true,
         }
     }
 }
