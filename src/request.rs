@@ -1,6 +1,5 @@
-use finchers::endpoint;
-use finchers::endpoint::{Context, Endpoint, EndpointExt, EndpointResult};
-use finchers::endpoints::{body, method, path};
+use finchers::endpoint::{Context, Endpoint, EndpointResult};
+use finchers::endpoints::{body};
 use finchers::error;
 use finchers::error::Error;
 use finchers::input::with_get_cx;
@@ -36,13 +35,13 @@ use serde::Deserialize;
 ///   it into a value of `GraphQLRequest`.
 pub fn request() -> RequestEndpoint {
     RequestEndpoint {
-        inner: method::get(path::end()).or(method::post(path::end())),
+        _priv: (),
     }
 }
 
 #[derive(Debug)]
 pub struct RequestEndpoint {
-    inner: endpoint::Or<method::MatchGet<path::EndPath>, method::MatchPost<path::EndPath>>,
+    _priv: (),
 }
 
 impl<'a> Endpoint<'a> for RequestEndpoint {
@@ -50,7 +49,6 @@ impl<'a> Endpoint<'a> for RequestEndpoint {
     type Future = RequestFuture<'a>;
 
     fn apply(&'a self, cx: &mut Context) -> EndpointResult<Self::Future> {
-        let _ = self.inner.apply(cx)?;
         if cx.input().method() == Method::GET {
             Ok(RequestFuture {
                 kind: RequestKind::Get,
