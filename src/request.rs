@@ -1,5 +1,5 @@
 use finchers::endpoint::{Context, Endpoint, EndpointResult};
-use finchers::endpoints::{body};
+use finchers::endpoints::body;
 use finchers::error;
 use finchers::error::Error;
 use finchers::input::with_get_cx;
@@ -34,9 +34,7 @@ use serde::Deserialize;
 /// * If the method is POST, receives the all contents of the request body and then converts
 ///   it into a value of `GraphQLRequest`.
 pub fn request() -> RequestEndpoint {
-    RequestEndpoint {
-        _priv: (),
-    }
+    RequestEndpoint { _priv: () }
 }
 
 #[derive(Debug)]

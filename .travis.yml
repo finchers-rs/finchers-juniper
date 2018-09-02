@@ -14,13 +14,32 @@ branches:
 matrix:
   allow_failures:
     - rust: nightly
+  fast_finish: true
+
   include:
     - rust: nightly-2018-08-30
+      before_script:
+        - rustup component add rustfmt-preview
+        - export CARGO_INCREMENTAL=0
+      script:
+        - cargo update
+        - cargo test
+        - cargo fmt -- --check
+
     - rust: nightly
+      env: LATEST_NIGHTLY
+      before_script:
+        - export CARGO_INCREMENTAL=0
+      script:
+        - cargo update
+        - cargo test
+
     - rust: nightly-2018-08-30
       env: DEPLOY_API_DOC
+      before_script:
       script:
-        - cargo clean
+        - rm -rf target/doc
+        - cargo update
         - cargo doc
         - rm -f target/doc/.lock
       deploy:
