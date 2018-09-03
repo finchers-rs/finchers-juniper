@@ -8,6 +8,7 @@ use finchers::output::{Output, OutputContext};
 
 use std::pin::PinMut;
 
+use futures::future::poll_fn;
 use futures::future::{Future, TryFuture};
 use futures::task;
 use futures::task::Poll;
@@ -21,6 +22,8 @@ use http::Method;
 use http::{header, Response, StatusCode};
 use percent_encoding::percent_decode;
 use serde::Deserialize;
+use tokio::prelude::Async as Async01;
+use tokio_threadpool::blocking;
 
 /// Create an endpoint which parses a GraphQL request from the client.
 ///
@@ -164,7 +167,7 @@ impl GraphQLRequest {
     }
 
     pub fn execute<QueryT, MutationT, CtxT>(
-        self,
+        &self,
         root_node: &RootNode<'static, QueryT, MutationT>,
         context: &CtxT,
     ) -> GraphQLResponse
@@ -191,6 +194,24 @@ impl GraphQLRequest {
                 }
             }
         }
+    }
+
+    pub fn execute_async<QueryT, MutationT, CtxT>(
+        self,
+        root_node: impl AsRef<RootNode<'static, QueryT, MutationT>>,
+        context: CtxT,
+    ) -> impl Future<Output = Result<GraphQLResponse, Error>>
+    where
+        QueryT: GraphQLType<Context = CtxT>,
+        MutationT: GraphQLType<Context = CtxT>,
+    {
+        poll_fn(
+            move |_| match blocking(|| self.execute(root_node.as_ref(), &context)) {
+                Ok(Async01::Ready(response)) => Poll::Ready(Ok(response)),
+                Ok(Async01::NotReady) => Poll::Pending,
+                Err(err) => Poll::Ready(Err(error::fail(err))),
+            },
+        )
     }
 }
 
