@@ -8,7 +8,7 @@ use finchers::output::{Output, OutputContext};
 
 use std::pin::PinMut;
 
-use futures::future::poll_fn;
+use futures::compat::Future01CompatExt;
 use futures::future::{Future, TryFuture};
 use futures::task;
 use futures::task::Poll;
@@ -22,8 +22,8 @@ use http::Method;
 use http::{header, Response, StatusCode};
 use percent_encoding::percent_decode;
 use serde::Deserialize;
-use tokio::prelude::Async as Async01;
-use tokio_threadpool::blocking;
+use tokio::prelude::future::poll_fn as poll_fn_01;
+use tokio_threadpool::{blocking, BlockingError};
 
 /// Create an endpoint which parses a GraphQL request from the client.
 ///
@@ -40,6 +40,7 @@ pub fn request() -> RequestEndpoint {
     RequestEndpoint { _priv: () }
 }
 
+#[allow(missing_docs)]
 #[derive(Debug)]
 pub struct RequestEndpoint {
     _priv: (),
@@ -49,7 +50,7 @@ impl<'a> Endpoint<'a> for RequestEndpoint {
     type Output = (GraphQLRequest,);
     type Future = RequestFuture<'a>;
 
-    fn apply(&'a self, cx: &mut Context) -> EndpointResult<Self::Future> {
+    fn apply(&'a self, cx: &mut Context<'_>) -> EndpointResult<Self::Future> {
         if cx.input().method() == Method::GET {
             Ok(RequestFuture {
                 kind: RequestKind::Get,
@@ -76,7 +77,7 @@ enum RequestKind<'a> {
 impl<'a> Future for RequestFuture<'a> {
     type Output = Result<(GraphQLRequest,), Error>;
 
-    fn poll(self: PinMut<Self>, cx: &mut task::Context) -> Poll<Self::Output> {
+    fn poll(self: PinMut<'_, Self>, cx: &mut task::Context<'_>) -> Poll<Self::Output> {
         let result = match unsafe { PinMut::get_mut_unchecked(self) }.kind {
             RequestKind::Get => with_get_cx(|input| {
                 let s = input
@@ -110,8 +111,7 @@ impl<'a> Future for RequestFuture<'a> {
     }
 }
 
-// ==== BatchRequest ====
-
+/// A type representing the decoded GraphQL query obtained by parsing an HTTP request.
 #[derive(Debug, Deserialize)]
 pub struct GraphQLRequest(BatchRequest);
 
@@ -123,7 +123,7 @@ enum BatchRequest {
 }
 
 impl GraphQLRequest {
-    pub fn from_query(s: &str) -> Result<GraphQLRequest, Error> {
+    fn from_query(s: &str) -> Result<GraphQLRequest, Error> {
         #[derive(Debug, Deserialize)]
         struct ParsedQuery {
             query: String,
@@ -166,6 +166,7 @@ impl GraphQLRequest {
         )))
     }
 
+    /// Executes a GraphQL query represented by this value using the specified schema and context.
     pub fn execute<QueryT, MutationT, CtxT>(
         &self,
         root_node: &RootNode<'static, QueryT, MutationT>,
@@ -196,25 +197,25 @@ impl GraphQLRequest {
         }
     }
 
+    /// Consumes `self` and constructs a `Future` to execute a GraphQL request with
+    /// the specified schema and context.
+    ///
+    /// Note that the future internally uses the Tokio's blocking API and will block
+    /// the current thread after the transition is completed.
     pub fn execute_async<QueryT, MutationT, CtxT>(
         self,
         root_node: impl AsRef<RootNode<'static, QueryT, MutationT>>,
         context: CtxT,
-    ) -> impl Future<Output = Result<GraphQLResponse, Error>>
+    ) -> impl Future<Output = Result<GraphQLResponse, BlockingError>>
     where
         QueryT: GraphQLType<Context = CtxT>,
         MutationT: GraphQLType<Context = CtxT>,
     {
-        poll_fn(
-            move |_| match blocking(|| self.execute(root_node.as_ref(), &context)) {
-                Ok(Async01::Ready(response)) => Poll::Ready(Ok(response)),
-                Ok(Async01::NotReady) => Poll::Pending,
-                Err(err) => Poll::Ready(Err(error::fail(err))),
-            },
-        )
+        poll_fn_01(move || blocking(|| self.execute(root_node.as_ref(), &context))).compat()
     }
 }
 
+/// A type representing the result from executing a GraphQL query.
 #[derive(Debug)]
 pub struct GraphQLResponse {
     is_ok: bool,
@@ -225,7 +226,7 @@ impl Output for GraphQLResponse {
     type Body = Once<Vec<u8>>;
     type Error = Error;
 
-    fn respond(self, _: &mut OutputContext) -> Result<Response<Self::Body>, Self::Error> {
+    fn respond(self, _: &mut OutputContext<'_>) -> Result<Response<Self::Body>, Self::Error> {
         let status = if self.is_ok {
             StatusCode::OK
         } else {

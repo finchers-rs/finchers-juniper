@@ -20,6 +20,7 @@ pub fn graphiql(endpoint_url: impl AsRef<str>) -> GraphiQL {
     }
 }
 
+#[allow(missing_docs)]
 #[derive(Debug)]
 pub struct GraphiQL {
     source: Bytes,
@@ -36,7 +37,7 @@ impl<'a> Endpoint<'a> for GraphiQL {
     type Output = (GraphiQLSource,);
     type Future = GraphiQLFuture<'a>;
 
-    fn apply(&'a self, _: &mut Context) -> EndpointResult<Self::Future> {
+    fn apply(&'a self, _: &mut Context<'_>) -> EndpointResult<Self::Future> {
         Ok(GraphiQLFuture(&self.source))
     }
 }
@@ -47,7 +48,7 @@ pub struct GraphiQLFuture<'a>(&'a Bytes);
 impl<'a> Future for GraphiQLFuture<'a> {
     type Output = Result<(GraphiQLSource,), Error>;
 
-    fn poll(self: PinMut<Self>, _: &mut task::Context) -> Poll<Self::Output> {
+    fn poll(self: PinMut<'_, Self>, _: &mut task::Context<'_>) -> Poll<Self::Output> {
         Poll::Ready(Ok((GraphiQLSource(self.0.clone()),)))
     }
 }
@@ -59,7 +60,7 @@ impl Output for GraphiQLSource {
     type Body = Once<Bytes>;
     type Error = Never;
 
-    fn respond(self, _: &mut OutputContext) -> Result<Response<Self::Body>, Self::Error> {
+    fn respond(self, _: &mut OutputContext<'_>) -> Result<Response<Self::Body>, Self::Error> {
         Ok(Response::builder()
             .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
             .body(Once::new(self.0))

@@ -1,7 +1,22 @@
 #![feature(rust_2018_preview)]
 #![feature(pin, futures_api, arbitrary_self_types)]
 
-//! Endpoints for Juniper integration.
+//! Endpoints for supporting Juniper integration.
+
+#![doc(
+    html_root_url = "https://docs.rs/finchers-juniper/0.1.0-alpha.1",
+    test(attr(feature(rust_2018_preview))),
+)]
+#![warn(
+    missing_docs,
+    missing_debug_implementations,
+    future_incompatible,
+    nonstandard_style,
+    rust_2018_idioms,
+    unused,
+)]
+#![cfg_attr(feature = "strict", deny(warnings))]
+#![cfg_attr(feature = "strict", doc(test(attr(deny(warnings)))))]
 
 extern crate bytes;
 extern crate failure;
@@ -10,7 +25,6 @@ extern crate futures;
 extern crate http;
 extern crate juniper;
 extern crate percent_encoding;
-extern crate pin_utils;
 extern crate serde;
 extern crate tokio;
 extern crate tokio_threadpool;
