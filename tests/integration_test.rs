@@ -9,9 +9,9 @@ extern crate percent_encoding;
 use std::sync::Arc;
 
 use finchers::endpoint;
+use finchers::endpoint::syntax;
 use finchers::endpoint::Endpoint;
 use finchers::endpoint::EndpointExt;
-use finchers::endpoints;
 use finchers::local;
 use finchers_juniper::{GraphQLRequest, GraphQLResponse};
 
@@ -79,7 +79,7 @@ where
 fn test_finchers_integration() {
     let database = Database::new();
     let schema = Schema::new(Database::new(), EmptyMutation::<Database>::new());
-    let endpoint = endpoints::path::end()
+    let endpoint = syntax::eos()
         .and(finchers_juniper::request())
         .and(endpoint::value(Arc::new(database)))
         .and(endpoint::value(Arc::new(schema)))

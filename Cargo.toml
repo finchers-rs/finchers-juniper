@@ -17,7 +17,8 @@ build = "build.rs"
 strict = []
 
 [dependencies]
-finchers = "0.12.0-alpha.3"
+finchers = { git = "https://github.com/finchers-rs/finchers.git", branch = "master" }
+#finchers = "0.12.0-alpha.5"
 
 bytes = "0.4.9"
 failure = { version = "0.1.2", features = ["derive"] }
@@ -30,6 +31,7 @@ serde_json = "1.0.26"
 serde_qs = "0.4.1"
 tokio = "0.1.8"
 tokio-threadpool = "0.1.6"
+pin-utils = "0.1.0-alpha.2"
 
 [build-dependencies]
 version_check = "0.1.4"
