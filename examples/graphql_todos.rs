@@ -3,7 +3,6 @@
 extern crate failure;
 extern crate finchers;
 extern crate finchers_juniper;
-extern crate futures;
 #[macro_use]
 extern crate juniper;
 extern crate log;
@@ -11,12 +10,9 @@ extern crate pretty_env_logger;
 
 use finchers::endpoint;
 use finchers::endpoint::EndpointExt;
-use finchers::error;
-use finchers::{route, routes};
-use finchers_juniper::GraphQLRequest;
+use finchers::path;
 
 use failure::Fallible;
-use futures::future::TryFutureExt;
 use log::info;
 use std::sync::Arc;
 
@@ -27,19 +23,15 @@ fn main() -> Fallible<()> {
     pretty_env_logger::try_init()?;
 
     let repository = Arc::new(Repository::init());
-    let schema = Arc::new(create_schema());
+    let context_endpoint = endpoint::value(repository).map(|repository| Context { repository });
 
-    let graphql_endpoint = route!(/ "graphql" /)
-        .and(finchers_juniper::request())
-        .and(endpoint::value(schema))
-        .and(endpoint::value(repository).map(|repository| Context { repository }))
-        .and_then(|request: GraphQLRequest, schema, context| {
-            request.execute_async(schema, context).map_err(error::fail)
-        });
+    let graphql_endpoint = path!(/ "graphql" /)
+        .and(context_endpoint)
+        .with(finchers_juniper::execute(create_schema()));
 
-    let graphiql_endpoint = route!(@get /).and(finchers_juniper::graphiql("/graphql"));
+    let graphiql_endpoint = path!(@get /).and(finchers_juniper::graphiql("/graphql"));
 
-    let endpoint = routes![graphql_endpoint, graphiql_endpoint,];
+    let endpoint = graphql_endpoint.or(graphiql_endpoint);
 
     info!("Listening on http://127.0.0.1:4000");
     finchers::launch(endpoint).start("127.0.0.1:4000");
