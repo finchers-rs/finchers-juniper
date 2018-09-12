@@ -2,7 +2,7 @@ use finchers::endpoint::wrapper::Wrapper;
 use finchers::endpoint::{Context, Endpoint, EndpointResult};
 use finchers::error::Error;
 
-use futures::future::{Future, TryFuture};
+use futures::future::Future;
 use futures::ready;
 use futures::task;
 use futures::task::Poll;
@@ -19,6 +19,9 @@ use crate::maybe_done::MaybeDone;
 use crate::request::{GraphQLResponse, RequestEndpoint};
 
 /// Create a `Wrapper` for building a GraphQL endpoint using the specified `RootNode`.
+///
+/// The endpoint created by this wrapper will block the current thread
+/// to execute the GraphQL query.
 pub fn execute<QueryT, MutationT, CtxT>(
     root_node: RootNode<'static, QueryT, MutationT>,
 ) -> Execute<QueryT, MutationT, CtxT>
@@ -26,7 +29,10 @@ where
     QueryT: GraphQLType<Context = CtxT>,
     MutationT: GraphQLType<Context = CtxT>,
 {
-    Execute { root_node }
+    Execute {
+        root_node,
+        use_blocking: true,
+    }
 }
 
 #[allow(missing_docs)]
@@ -36,6 +42,23 @@ where
     MutationT: GraphQLType<Context = CtxT>,
 {
     root_node: RootNode<'static, QueryT, MutationT>,
+    use_blocking: bool,
+}
+
+impl<QueryT, MutationT, CtxT> Execute<QueryT, MutationT, CtxT>
+where
+    QueryT: GraphQLType<Context = CtxT>,
+    MutationT: GraphQLType<Context = CtxT>,
+{
+    /// Sets whether to use the Tokio's blocking API when executing the GraphQL query.
+    ///
+    /// The default value is `true`.
+    pub fn use_blocking(self, enabled: bool) -> Self {
+        Execute {
+            use_blocking: enabled,
+            ..self
+        }
+    }
 }
 
 impl<QueryT, MutationT, CtxT> fmt::Debug for Execute<QueryT, MutationT, CtxT>
@@ -44,7 +67,10 @@ where
     MutationT: GraphQLType<Context = CtxT>,
 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.debug_struct("Execute").finish()
+        formatter
+            .debug_struct("Execute")
+            .field("use_blocking", &self.use_blocking)
+            .finish()
     }
 }
 
@@ -63,6 +89,7 @@ where
             context: endpoint,
             request: crate::request::request(),
             root_node: self.root_node,
+            use_blocking: self.use_blocking,
         }
     }
 }
@@ -75,6 +102,7 @@ where
     context: E,
     request: RequestEndpoint,
     root_node: RootNode<'static, QueryT, MutationT>,
+    use_blocking: bool,
 }
 
 impl<E, QueryT, MutationT, CtxT> fmt::Debug for ExecuteEndpoint<E, QueryT, MutationT, CtxT>
@@ -88,6 +116,7 @@ where
             .debug_struct("ExecuteEndpoint")
             .field("context", &self.context)
             .field("request", &self.request)
+            .field("use_blocking", &self.use_blocking)
             .finish()
     }
 }
@@ -100,7 +129,7 @@ where
     CtxT: 'a,
 {
     type Output = (GraphQLResponse,);
-    type Future = ExecuteFuture<'a, E::Future, QueryT, MutationT, CtxT>;
+    type Future = ExecuteFuture<'a, E, QueryT, MutationT, CtxT>;
 
     fn apply(&'a self, cx: &mut Context<'_>) -> EndpointResult<Self::Future> {
         let context = self.context.apply(cx)?;
@@ -108,48 +137,32 @@ where
         Ok(ExecuteFuture {
             context: MaybeDone::new(context),
             request: MaybeDone::new(request),
-            root_node: &self.root_node,
+            endpoint: self,
         })
     }
 }
 
-pub struct ExecuteFuture<'a, Fut, QueryT, MutationT, CtxT: 'a>
+#[derive(Debug)]
+pub struct ExecuteFuture<'a, E, QueryT, MutationT, CtxT>
 where
-    Fut: TryFuture<Ok = (CtxT,), Error = Error>,
+    E: Endpoint<'a, Output = (CtxT,)>,
     QueryT: GraphQLType<Context = CtxT> + 'a,
     MutationT: GraphQLType<Context = CtxT> + 'a,
     CtxT: 'a,
 {
-    context: MaybeDone<Fut>,
+    context: MaybeDone<E::Future>,
     request: MaybeDone<<RequestEndpoint as Endpoint<'a>>::Future>,
-    root_node: &'a RootNode<'static, QueryT, MutationT>,
+    endpoint: &'a ExecuteEndpoint<E, QueryT, MutationT, CtxT>,
 }
 
-impl<'a, Fut, QueryT, MutationT, CtxT> fmt::Debug
-    for ExecuteFuture<'a, Fut, QueryT, MutationT, CtxT>
+impl<'a, E, QueryT, MutationT, CtxT> ExecuteFuture<'a, E, QueryT, MutationT, CtxT>
 where
-    Fut: TryFuture<Ok = (CtxT,), Error = Error> + fmt::Debug,
-    QueryT: GraphQLType<Context = CtxT>,
-    MutationT: GraphQLType<Context = CtxT>,
-    CtxT: fmt::Debug,
-{
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("ExecuteFuture")
-            .field("context", &self.context)
-            .field("request", &self.request)
-            .finish()
-    }
-}
-
-impl<'a, Fut, QueryT, MutationT, CtxT> ExecuteFuture<'a, Fut, QueryT, MutationT, CtxT>
-where
-    Fut: TryFuture<Ok = (CtxT,), Error = Error>,
+    E: Endpoint<'a, Output = (CtxT,)>,
     QueryT: GraphQLType<Context = CtxT>,
     MutationT: GraphQLType<Context = CtxT>,
     CtxT: 'a,
 {
-    unsafe_pinned!(context: MaybeDone<Fut>);
+    unsafe_pinned!(context: MaybeDone<E::Future>);
     unsafe_pinned!(request: MaybeDone<<RequestEndpoint as Endpoint<'a>>::Future>);
 
     fn execute(mut self: PinMut<'_, Self>) -> GraphQLResponse {
@@ -161,13 +174,13 @@ where
             .request()
             .take_ok()
             .expect("The request has already taken");
-        request.execute(self.root_node, &context)
+        request.execute(&self.endpoint.root_node, &context)
     }
 }
 
-impl<'a, Fut, QueryT, MutationT, CtxT> Future for ExecuteFuture<'a, Fut, QueryT, MutationT, CtxT>
+impl<'a, E, QueryT, MutationT, CtxT> Future for ExecuteFuture<'a, E, QueryT, MutationT, CtxT>
 where
-    Fut: TryFuture<Ok = (CtxT,), Error = Error>,
+    E: Endpoint<'a, Output = (CtxT,)>,
     QueryT: GraphQLType<Context = CtxT>,
     MutationT: GraphQLType<Context = CtxT>,
     CtxT: 'a,
@@ -177,10 +190,15 @@ where
     fn poll(mut self: PinMut<'_, Self>, cx: &mut task::Context<'_>) -> Poll<Self::Output> {
         ready!(self.context().poll_ready(cx)?);
         ready!(self.request().poll_ready(cx)?);
-        match blocking(move || self.execute()) {
-            Ok(Async01::Ready(response)) => Poll::Ready(Ok((response,))),
-            Ok(Async01::NotReady) => Poll::Pending,
-            Err(err) => Poll::Ready(Err(finchers::error::fail(err))),
+        if self.endpoint.use_blocking {
+            match blocking(move || self.execute()) {
+                Ok(Async01::Ready(response)) => Poll::Ready(Ok((response,))),
+                Ok(Async01::NotReady) => Poll::Pending,
+                Err(err) => Poll::Ready(Err(finchers::error::fail(err))),
+            }
+        } else {
+            let response = self.execute();
+            Poll::Ready(Ok((response,)))
         }
     }
 }
