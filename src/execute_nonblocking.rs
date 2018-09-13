@@ -2,10 +2,11 @@ use finchers::endpoint::wrapper::Wrapper;
 use finchers::endpoint::{Context, Endpoint, EndpointResult};
 use finchers::error::Error;
 
+use futures::compat::Future01CompatExt;
 use futures::future::Future;
 use futures::ready;
 use futures::task;
-use futures::task::Poll;
+use futures::task::{JoinHandle, Poll, SpawnExt};
 
 use pin_utils::unsafe_pinned;
 use std::pin::PinMut;
@@ -13,8 +14,8 @@ use std::pin::PinMut;
 use juniper::{GraphQLType, RootNode};
 use std::fmt;
 use std::sync::Arc;
-use tokio::prelude::Async as Async01;
-use tokio_threadpool::blocking;
+use tokio::prelude::future::poll_fn as poll_fn_01;
+use tokio_threadpool::{blocking, BlockingError};
 
 use crate::maybe_done::MaybeDone;
 use crate::request::{GraphQLResponse, RequestEndpoint};
@@ -137,11 +138,7 @@ where
 {
     context: MaybeDone<E::Future>,
     request: MaybeDone<<RequestEndpoint as Endpoint<'a>>::Future>,
-    execute: Option<
-        futures::channel::oneshot::Receiver<
-            Result<GraphQLResponse, tokio_threadpool::BlockingError>,
-        >,
-    >,
+    execute: Option<JoinHandle<Result<GraphQLResponse, BlockingError>>>,
     endpoint: &'a ExecuteEndpoint<E, QueryT, MutationT, CtxT>,
 }
 
@@ -156,14 +153,7 @@ where
 {
     unsafe_pinned!(context: MaybeDone<E::Future>);
     unsafe_pinned!(request: MaybeDone<<RequestEndpoint as Endpoint<'a>>::Future>);
-    unsafe_pinned!(
-        execute:
-            Option<
-                futures::channel::oneshot::Receiver<
-                    Result<GraphQLResponse, tokio_threadpool::BlockingError>,
-                >,
-            >
-    );
+    unsafe_pinned!(execute: Option<JoinHandle<Result<GraphQLResponse, BlockingError>>>);
 }
 
 impl<'a, E, QueryT, MutationT, CtxT> Future for ExecuteFuture<'a, E, QueryT, MutationT, CtxT>
@@ -179,45 +169,33 @@ where
 
     fn poll(mut self: PinMut<'_, Self>, cx: &mut task::Context<'_>) -> Poll<Self::Output> {
         loop {
-            if self.execute.is_none() {
-                ready!(self.context().poll_ready(cx)?);
-                ready!(self.request().poll_ready(cx)?);
-
-                let (context,) = self
-                    .context()
-                    .take_ok()
-                    .expect("The context has already taken");
-                let (request,) = self
-                    .request()
-                    .take_ok()
-                    .expect("The request has already taken");
-
-                let (tx, rx) = futures::channel::oneshot::channel();
-                let mut tx_opt = Some(tx);
-                let root_node = self.endpoint.root_node.clone();
-                let future = futures::future::poll_fn(move |_| {
-                    let result = match blocking(|| request.execute(&root_node, &context)) {
-                        Ok(Async01::Ready(response)) => Ok(response),
-                        Ok(Async01::NotReady) => return Poll::Pending,
-                        Err(err) => Err(err),
-                    };
-                    tx_opt.take().unwrap().send(result).expect("");
-                    Poll::Ready(())
-                });
-
-                cx.spawner()
-                    .spawn_obj(futures::future::FutureObj::new(std::pin::PinBox::new(
-                        future,
-                    ))).expect("");
-                PinMut::set(self.execute(), Some(rx));
-            } else {
-                let execute = self.execute().as_pin_mut().expect("");
-                return execute.poll(cx).map(|result| match result {
-                    Ok(Ok(response)) => Ok((response,)),
-                    Ok(Err(err)) => Err(finchers::error::fail(err)),
-                    Err(err) => Err(finchers::error::fail(err)),
-                });
+            if let Some(execute) = self.execute().as_pin_mut() {
+                return execute
+                    .poll(cx)
+                    .map_ok(|response| (response,))
+                    .map_err(finchers::error::fail);
             }
+
+            ready!(self.context().poll_ready(cx)?);
+            ready!(self.request().poll_ready(cx)?);
+            let (context,) = self
+                .context()
+                .take_ok()
+                .expect("The context has already taken");
+            let (request,) = self
+                .request()
+                .take_ok()
+                .expect("The request has already taken");
+            let root_node = self.endpoint.root_node.clone();
+
+            let future =
+                poll_fn_01(move || blocking(|| request.execute(&root_node, &context))).compat();
+            let handle = cx
+                .spawner()
+                .spawn_with_handle(future)
+                .expect("failed to spawn the task for executing a GraphQL query.");
+
+            PinMut::set(self.execute(), Some(handle));
         }
     }
 }
