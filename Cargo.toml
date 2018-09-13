@@ -17,8 +17,7 @@ build = "build.rs"
 strict = []
 
 [dependencies]
-finchers = { git = "https://github.com/finchers-rs/finchers.git", branch = "master" }
-#finchers = "0.12.0-alpha.5"
+finchers = "0.12.0-alpha.5"
 
 bytes = "0.4.9"
 failure = { version = "0.1.2", features = ["derive"] }
