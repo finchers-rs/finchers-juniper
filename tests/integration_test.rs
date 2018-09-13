@@ -8,10 +8,8 @@ extern crate percent_encoding;
 
 use std::sync::Arc;
 
-use finchers::endpoint;
+use finchers::prelude::*;
 use finchers::endpoint::syntax;
-use finchers::endpoint::Endpoint;
-use finchers::endpoint::EndpointExt;
 use finchers::local;
 use finchers_juniper::{GraphQLRequest, GraphQLResponse};
 
