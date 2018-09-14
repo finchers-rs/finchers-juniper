@@ -7,8 +7,8 @@ extern crate juniper;
 extern crate log;
 extern crate pretty_env_logger;
 
-use finchers::prelude::*;
 use finchers::path;
+use finchers::prelude::*;
 
 use failure::Fallible;
 use log::info;
@@ -100,7 +100,7 @@ mod business {
 /// The definition of GraphQL schema and resolvers.
 mod graphql {
     use juniper;
-    use juniper::{FieldResult, RootNode, graphql_object};
+    use juniper::{graphql_object, FieldResult, RootNode};
     use std::sync::Arc;
 
     use crate::business::Repository;
