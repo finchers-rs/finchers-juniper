@@ -197,11 +197,11 @@ impl GraphQLRequest {
         }
     }
 
-    /// Consumes `self` and constructs a `Future` to execute a GraphQL request with
-    /// the specified schema and context.
-    ///
-    /// Note that the future internally uses the Tokio's blocking API and will block
-    /// the current thread after the transition is completed.
+    #[doc(hidden)]
+    #[deprecated(
+        since = "0.1.0-alpha.3",
+        note = "This method is going to remove before releasing 0.1.0."
+    )]
     pub fn execute_async<QueryT, MutationT, CtxT>(
         self,
         root_node: impl AsRef<RootNode<'static, QueryT, MutationT>>,
