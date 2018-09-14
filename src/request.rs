@@ -31,11 +31,13 @@ use tokio_threadpool::{blocking, BlockingError};
 /// segments is empty, and skips if the request is not acceptable.
 /// If the validation is successed, it will return a Future which behaves as follows:
 ///
-/// * If the method is GET, acquires the query string from the task context and converts it
-///   into a value of `GraphQLRequest`.
+/// * If the method is `GET`, the query in the request is parsed as a single GraphQL query.
 ///   If the query string is missing, it will return an error.
-/// * If the method is POST, receives the all contents of the request body and then converts
+/// * If the method is `POST`, receives the all contents of the request body and then converts
 ///   it into a value of `GraphQLRequest`.
+///   - When `content-type` is `application/json`, the body is parsed as a JSON object which
+///     contains a GraphQL query and supplemental fields if needed.
+///   - When `content-type` is `application/graphql`, the body is parsed as a single GraphQL query.
 pub fn request() -> RequestEndpoint {
     RequestEndpoint { _priv: () }
 }
@@ -84,26 +86,24 @@ impl<'a> Future for RequestFuture<'a> {
                     .uri()
                     .query()
                     .ok_or_else(|| error::bad_request("missing query string"))?;
-                GraphQLRequest::from_query(s)
+                parse_query_str(s)
             }),
             RequestKind::Post(ref mut f) => {
                 let (data,) = try_ready!(unsafe { PinMut::new_unchecked(f) }.try_poll(cx));
-                with_get_cx(|input| -> Result<_, Error> {
-                    match input.content_type().map_err(error::bad_request)? {
+                with_get_cx(
+                    |input| match input.content_type().map_err(error::bad_request)? {
                         Some(m) if *m == "application/json" => {
                             serde_json::from_slice(&*data).map_err(error::bad_request)
                         }
                         Some(m) if *m == "application/graphql" => {
                             let query =
                                 String::from_utf8(data.to_vec()).map_err(error::bad_request)?;
-                            Ok(GraphQLRequest(BatchRequest::Single(
-                                juniper::http::GraphQLRequest::new(query, None, None),
-                            )))
+                            Ok(GraphQLRequest::single(query, None, None))
                         }
                         Some(_m) => Err(error::bad_request("unsupported content-type.")),
                         None => Err(error::bad_request("missing content-type.")),
-                    }
-                })
+                    },
+                )
             }
         };
 
@@ -111,59 +111,28 @@ impl<'a> Future for RequestFuture<'a> {
     }
 }
 
+// ==== GraphQLRequest ====
+
 /// A type representing the decoded GraphQL query obtained by parsing an HTTP request.
 #[derive(Debug, Deserialize)]
-pub struct GraphQLRequest(BatchRequest);
+pub struct GraphQLRequest(GraphQLRequestKind);
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
-enum BatchRequest {
+enum GraphQLRequestKind {
     Single(juniper::http::GraphQLRequest),
     Batch(Vec<juniper::http::GraphQLRequest>),
 }
 
 impl GraphQLRequest {
-    fn from_query(s: &str) -> Result<GraphQLRequest, Error> {
-        #[derive(Debug, Deserialize)]
-        struct ParsedQuery {
-            query: String,
-            operation_name: Option<String>,
-            variables: Option<String>,
-        }
-
-        let parsed: ParsedQuery =
-            serde_qs::from_str(s).map_err(|e| error::fail(SyncFailure::new(e)))?;
-
-        let query = percent_decode(parsed.query.as_bytes())
-            .decode_utf8()
-            .map_err(error::bad_request)?
-            .into_owned();
-
-        let operation_name = match parsed.operation_name {
-            Some(s) => Some(
-                percent_decode(s.as_bytes())
-                    .decode_utf8()
-                    .map_err(error::bad_request)?
-                    .into_owned(),
-            ),
-            None => None,
-        };
-
-        let variables: Option<InputValue> = match parsed.variables {
-            Some(variables) => {
-                let decoded = percent_decode(variables.as_bytes())
-                    .decode_utf8()
-                    .map_err(error::bad_request)?;
-                serde_json::from_str(&*decoded)
-                    .map(Some)
-                    .map_err(error::bad_request)?
-            }
-            None => None,
-        };
-
-        Ok(GraphQLRequest(BatchRequest::Single(
+    fn single(
+        query: String,
+        operation_name: Option<String>,
+        variables: Option<InputValue>,
+    ) -> GraphQLRequest {
+        GraphQLRequest(GraphQLRequestKind::Single(
             juniper::http::GraphQLRequest::new(query, operation_name, variables),
-        )))
+        ))
     }
 
     /// Executes a GraphQL query represented by this value using the specified schema and context.
@@ -176,15 +145,16 @@ impl GraphQLRequest {
         QueryT: GraphQLType<Context = CtxT>,
         MutationT: GraphQLType<Context = CtxT>,
     {
+        use self::GraphQLRequestKind::*;
         match self.0 {
-            BatchRequest::Single(ref request) => {
+            Single(ref request) => {
                 let response = request.execute(root_node, context);
                 GraphQLResponse {
                     is_ok: response.is_ok(),
                     body: serde_json::to_vec(&response),
                 }
             }
-            BatchRequest::Batch(ref requests) => {
+            Batch(ref requests) => {
                 let responses: Vec<_> = requests
                     .iter()
                     .map(|request| request.execute(root_node, context))
@@ -197,11 +167,11 @@ impl GraphQLRequest {
         }
     }
 
-    /// Consumes `self` and constructs a `Future` to execute a GraphQL request with
-    /// the specified schema and context.
-    ///
-    /// Note that the future internally uses the Tokio's blocking API and will block
-    /// the current thread after the transition is completed.
+    #[doc(hidden)]
+    #[deprecated(
+        since = "0.1.0-alpha.3",
+        note = "This method is going to remove before releasing 0.1.0."
+    )]
     pub fn execute_async<QueryT, MutationT, CtxT>(
         self,
         root_node: impl AsRef<RootNode<'static, QueryT, MutationT>>,
@@ -213,6 +183,47 @@ impl GraphQLRequest {
     {
         poll_fn_01(move || blocking(|| self.execute(root_node.as_ref(), &context))).compat()
     }
+}
+
+fn parse_query_str(s: &str) -> Result<GraphQLRequest, Error> {
+    #[derive(Debug, Deserialize)]
+    struct ParsedQuery {
+        query: String,
+        operation_name: Option<String>,
+        variables: Option<String>,
+    }
+
+    let parsed: ParsedQuery =
+        serde_qs::from_str(s).map_err(|e| error::fail(SyncFailure::new(e)))?;
+
+    let query = percent_decode(parsed.query.as_bytes())
+        .decode_utf8()
+        .map_err(error::bad_request)?
+        .into_owned();
+
+    let operation_name = match parsed.operation_name {
+        Some(s) => Some(
+            percent_decode(s.as_bytes())
+                .decode_utf8()
+                .map_err(error::bad_request)?
+                .into_owned(),
+        ),
+        None => None,
+    };
+
+    let variables: Option<InputValue> = match parsed.variables {
+        Some(variables) => {
+            let decoded = percent_decode(variables.as_bytes())
+                .decode_utf8()
+                .map_err(error::bad_request)?;
+            serde_json::from_str(&*decoded)
+                .map(Some)
+                .map_err(error::bad_request)?
+        }
+        None => None,
+    };
+
+    Ok(GraphQLRequest::single(query, operation_name, variables))
 }
 
 /// A type representing the result from executing a GraphQL query.
