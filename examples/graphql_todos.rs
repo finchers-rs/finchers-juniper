@@ -3,13 +3,11 @@
 extern crate failure;
 extern crate finchers;
 extern crate finchers_juniper;
-#[macro_use]
 extern crate juniper;
 extern crate log;
 extern crate pretty_env_logger;
 
-use finchers::endpoint;
-use finchers::endpoint::EndpointExt;
+use finchers::prelude::*;
 use finchers::path;
 
 use failure::Fallible;
@@ -27,7 +25,7 @@ fn main() -> Fallible<()> {
 
     let graphql_endpoint = path!(/ "graphql" /)
         .and(context_endpoint)
-        .with(finchers_juniper::execute(create_schema()));
+        .wrap(finchers_juniper::execute(create_schema()));
 
     let graphiql_endpoint = path!(@get /).and(finchers_juniper::graphiql("/graphql"));
 
@@ -102,7 +100,7 @@ mod business {
 /// The definition of GraphQL schema and resolvers.
 mod graphql {
     use juniper;
-    use juniper::{FieldResult, RootNode};
+    use juniper::{FieldResult, RootNode, graphql_object};
     use std::sync::Arc;
 
     use crate::business::Repository;
