@@ -4,7 +4,7 @@
 //! Endpoints for supporting Juniper integration.
 
 #![doc(
-    html_root_url = "https://docs.rs/finchers-juniper/0.1.0-alpha.2",
+    html_root_url = "https://docs.rs/finchers-juniper/0.1.0-alpha.3",
     test(attr(feature(rust_2018_preview))),
 )]
 #![warn(

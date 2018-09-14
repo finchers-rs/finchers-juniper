@@ -25,6 +25,7 @@ matrix:
         - cargo update
         - cargo test
         - cargo fmt -- --check
+        - if [[ "${TRAVIS_PULL_REQUEST_BRANCH:-}" = release-* ]]; then cargo package; fi
 
     - rust: nightly
       env: LATEST_NIGHTLY
