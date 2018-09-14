@@ -25,6 +25,7 @@ extern crate finchers;
 extern crate futures;
 extern crate http;
 extern crate juniper;
+extern crate log;
 extern crate percent_encoding;
 extern crate pin_utils;
 extern crate serde;
