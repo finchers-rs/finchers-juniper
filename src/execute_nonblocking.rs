@@ -3,6 +3,7 @@ use finchers::endpoint::{Context, Endpoint, EndpointResult};
 use finchers::error::Error;
 
 use futures::compat::Future01CompatExt;
+use futures::future::lazy;
 use futures::future::Future;
 use futures::ready;
 use futures::task;
@@ -12,6 +13,7 @@ use pin_utils::unsafe_pinned;
 use std::pin::PinMut;
 
 use juniper::{GraphQLType, RootNode};
+use log::trace;
 use std::fmt;
 use std::sync::Arc;
 use tokio::prelude::future::poll_fn as poll_fn_01;
@@ -34,7 +36,10 @@ where
     MutationT::TypeInfo: Send + Sync + 'static,
     CtxT: Send + 'static,
 {
-    ExecuteNonblocking { root_node }
+    ExecuteNonblocking {
+        root_node,
+        use_blocking: true,
+    }
 }
 
 #[allow(missing_docs)]
@@ -44,6 +49,7 @@ where
     MutationT: GraphQLType<Context = CtxT>,
 {
     root_node: RootNode<'static, QueryT, MutationT>,
+    use_blocking: bool,
 }
 
 impl<QueryT, MutationT, CtxT> fmt::Debug for ExecuteNonblocking<QueryT, MutationT, CtxT>
@@ -53,6 +59,22 @@ where
 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.debug_struct("ExecuteNonblocking").finish()
+    }
+}
+
+impl<QueryT, MutationT, CtxT> ExecuteNonblocking<QueryT, MutationT, CtxT>
+where
+    QueryT: GraphQLType<Context = CtxT>,
+    MutationT: GraphQLType<Context = CtxT>,
+{
+    /// Sets whether to use the Tokio's blocking API when executing the GraphQL query.
+    ///
+    /// The default value is `true`.
+    pub fn use_blocking(self, enabled: bool) -> Self {
+        ExecuteNonblocking {
+            use_blocking: enabled,
+            ..self
+        }
     }
 }
 
@@ -73,6 +95,7 @@ where
             context: endpoint,
             request: crate::request::request(),
             root_node: Arc::new(self.root_node),
+            use_blocking: self.use_blocking,
         }
     }
 }
@@ -85,6 +108,7 @@ where
     context: E,
     request: RequestEndpoint,
     root_node: Arc<RootNode<'static, QueryT, MutationT>>,
+    use_blocking: bool,
 }
 
 impl<E, QueryT, MutationT, CtxT> fmt::Debug for ExecuteEndpoint<E, QueryT, MutationT, CtxT>
@@ -98,6 +122,7 @@ where
             .debug_struct("ExecuteEndpoint")
             .field("context", &self.context)
             .field("request", &self.request)
+            .field("use_blocking", &self.use_blocking)
             .finish()
     }
 }
@@ -188,12 +213,20 @@ where
                 .expect("The request has already taken");
             let root_node = self.endpoint.root_node.clone();
 
-            let future =
-                poll_fn_01(move || blocking(|| request.execute(&root_node, &context))).compat();
-            let handle = cx
-                .spawner()
-                .spawn_with_handle(future)
-                .expect("failed to spawn the task for executing a GraphQL query.");
+            let handle = if self.endpoint.use_blocking {
+                trace!("spawn a GraphQL task (with Tokio's blocking API)");
+                let future =
+                    poll_fn_01(move || blocking(|| request.execute(&root_node, &context))).compat();
+                cx.spawner()
+                    .spawn_with_handle(future)
+                    .expect("failed to spawn the task for executing a GraphQL query.")
+            } else {
+                trace!("spawn a GraphQL task");
+                let future = lazy(move |_| Ok(request.execute(&root_node, &context)));
+                cx.spawner()
+                    .spawn_with_handle(future)
+                    .expect("failed to spawn the task for executing a GraphQL query.")
+            };
 
             PinMut::set(self.execute(), Some(handle));
         }

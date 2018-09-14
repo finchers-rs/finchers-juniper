@@ -24,18 +24,19 @@ failure = { version = "0.1.2", features = ["derive"] }
 futures-preview = { version = "0.3.0-alpha.6", features = ["tokio-compat"] }
 http = "0.1.10"
 juniper = "0.10.0"
+log = "0.4.5"
 percent-encoding = "1.0.1"
+pin-utils = "0.1.0-alpha.2"
 serde = { version = "1.0.75", features = ["derive"] }
 serde_json = "1.0.26"
 serde_qs = "0.4.1"
 tokio = "0.1.8"
 tokio-threadpool = "0.1.6"
-pin-utils = "0.1.0-alpha.2"
 
 [build-dependencies]
 version_check = "0.1.4"
 
 [dev-dependencies]
-log = "0.4.5"
 pretty_env_logger = "0.2.4"
 juniper = { version = "0.10.0", features = ["expose-test-schema", "serde_json"] }
+futures-cpupool = "0.1.8"
