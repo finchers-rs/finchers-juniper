@@ -6,13 +6,8 @@ use finchers::input::with_get_cx;
 use finchers::output::payload::Once;
 use finchers::output::{Output, OutputContext};
 
-use std::pin::PinMut;
-
-use futures::compat::Future01CompatExt;
-use futures::future::{Future, TryFuture};
-use futures::task;
-use futures::task::Poll;
 use futures::try_ready;
+use futures::{Future, Poll};
 
 use juniper;
 use juniper::{GraphQLType, InputValue, RootNode};
@@ -22,8 +17,6 @@ use http::Method;
 use http::{header, Response, StatusCode};
 use percent_encoding::percent_decode;
 use serde::Deserialize;
-use tokio::prelude::future::poll_fn as poll_fn_01;
-use tokio_threadpool::{blocking, BlockingError};
 
 /// Create an endpoint which parses a GraphQL request from the client.
 ///
@@ -77,10 +70,11 @@ enum RequestKind<'a> {
 }
 
 impl<'a> Future for RequestFuture<'a> {
-    type Output = Result<(GraphQLRequest,), Error>;
+    type Item = (GraphQLRequest,);
+    type Error = Error;
 
-    fn poll(self: PinMut<'_, Self>, cx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        let result = match unsafe { PinMut::get_mut_unchecked(self) }.kind {
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        let result = match self.kind {
             RequestKind::Get => with_get_cx(|input| {
                 let s = input
                     .uri()
@@ -89,7 +83,7 @@ impl<'a> Future for RequestFuture<'a> {
                 parse_query_str(s)
             }),
             RequestKind::Post(ref mut f) => {
-                let (data,) = try_ready!(unsafe { PinMut::new_unchecked(f) }.try_poll(cx));
+                let (data,) = try_ready!(f.poll());
                 with_get_cx(
                     |input| match input.content_type().map_err(error::bad_request)? {
                         Some(m) if *m == "application/json" => {
@@ -107,7 +101,7 @@ impl<'a> Future for RequestFuture<'a> {
             }
         };
 
-        Poll::Ready(result).map_ok(|request| (request,))
+        result.map(|request| (request,).into())
     }
 }
 
@@ -165,23 +159,6 @@ impl GraphQLRequest {
                 }
             }
         }
-    }
-
-    #[doc(hidden)]
-    #[deprecated(
-        since = "0.1.0-alpha.3",
-        note = "This method is going to remove before releasing 0.1.0."
-    )]
-    pub fn execute_async<QueryT, MutationT, CtxT>(
-        self,
-        root_node: impl AsRef<RootNode<'static, QueryT, MutationT>>,
-        context: CtxT,
-    ) -> impl Future<Output = Result<GraphQLResponse, BlockingError>>
-    where
-        QueryT: GraphQLType<Context = CtxT>,
-        MutationT: GraphQLType<Context = CtxT>,
-    {
-        poll_fn_01(move || blocking(|| self.execute(root_node.as_ref(), &context))).compat()
     }
 }
 

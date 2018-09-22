@@ -1,8 +1,5 @@
-#![feature(rust_2018_preview)]
-
 extern crate finchers;
 extern crate finchers_juniper;
-extern crate futures;
 extern crate juniper;
 extern crate percent_encoding;
 
@@ -17,7 +14,6 @@ use juniper::http::tests as http_tests;
 use juniper::tests::model::Database;
 use juniper::{EmptyMutation, RootNode};
 
-use futures::future::ready;
 use percent_encoding::{define_encode_set, utf8_percent_encode, QUERY_ENCODE_SET};
 
 type Schema = RootNode<'static, Database, EmptyMutation<Database>>;
@@ -83,7 +79,7 @@ fn test_finchers_integration() {
         .and(endpoint::value(Arc::new(schema)))
         .and_then(
             |req: GraphQLRequest, db: Arc<Database>, schema: Arc<Schema>| {
-                ready(Ok(req.execute(&*schema, &*db)))
+                Ok(req.execute(&*schema, &*db))
             },
         );
     let integration = TestFinchersIntegration {

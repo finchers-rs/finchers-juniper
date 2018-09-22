@@ -2,17 +2,11 @@ use finchers::endpoint::wrapper::Wrapper;
 use finchers::endpoint::{Context, Endpoint, EndpointResult};
 use finchers::error::Error;
 
-use futures::future::Future;
-use futures::ready;
-use futures::task;
-use futures::task::Poll;
-
-use pin_utils::unsafe_pinned;
-use std::pin::PinMut;
+use futures::try_ready;
+use futures::{Future, Poll};
 
 use juniper::{GraphQLType, RootNode};
 use std::fmt;
-use tokio::prelude::Async as Async01;
 use tokio_threadpool::blocking;
 
 use crate::maybe_done::MaybeDone;
@@ -162,16 +156,13 @@ where
     MutationT: GraphQLType<Context = CtxT>,
     CtxT: 'a,
 {
-    unsafe_pinned!(context: MaybeDone<E::Future>);
-    unsafe_pinned!(request: MaybeDone<<RequestEndpoint as Endpoint<'a>>::Future>);
-
-    fn execute(mut self: PinMut<'_, Self>) -> GraphQLResponse {
+    fn execute(&mut self) -> GraphQLResponse {
         let (context,) = self
-            .context()
+            .context
             .take_ok()
             .expect("The context has already taken");
         let (request,) = self
-            .request()
+            .request
             .take_ok()
             .expect("The request has already taken");
         request.execute(&self.endpoint.root_node, &context)
@@ -185,20 +176,19 @@ where
     MutationT: GraphQLType<Context = CtxT>,
     CtxT: 'a,
 {
-    type Output = Result<(GraphQLResponse,), Error>;
+    type Item = (GraphQLResponse,);
+    type Error = Error;
 
-    fn poll(mut self: PinMut<'_, Self>, cx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        ready!(self.context().poll_ready(cx)?);
-        ready!(self.request().poll_ready(cx)?);
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        try_ready!(self.context.poll_ready());
+        try_ready!(self.request.poll_ready());
         if self.endpoint.use_blocking {
-            match blocking(move || self.execute()) {
-                Ok(Async01::Ready(response)) => Poll::Ready(Ok((response,))),
-                Ok(Async01::NotReady) => Poll::Pending,
-                Err(err) => Poll::Ready(Err(finchers::error::fail(err))),
-            }
+            blocking(move || self.execute())
+                .map(|x| x.map(|response| (response,)))
+                .map_err(finchers::error::fail)
         } else {
             let response = self.execute();
-            Poll::Ready(Ok((response,)))
+            Ok((response,).into())
         }
     }
 }
