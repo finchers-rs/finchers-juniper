@@ -1,5 +1,3 @@
-#![feature(rust_2018_preview)]
-
 extern crate failure;
 extern crate finchers;
 extern crate finchers_juniper;

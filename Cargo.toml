@@ -1,6 +1,7 @@
 [package]
 name = "finchers-juniper"
 version = "0.1.0-alpha.3"
+edition = "2018"
 authors = ["Yusuke Sasaki <yusuke.sasaki.nuem@gmail.com>"]
 description = """
 Endpoints for supporting Juniper integration
@@ -11,30 +12,24 @@ homepage = "https://github.com/finchers-rs/finchers-juniper"
 repository = "https://github.com/finchers-rs/finchers-juniper.git"
 documentation = "https://docs.rs/finchers-juniper"
 
-build = "build.rs"
-
 [features]
 strict = []
 
 [dependencies]
-finchers = "0.12.0-alpha.5"
+finchers = "0.12.0-alpha.6"
 
 bytes = "0.4.9"
 failure = { version = "0.1.2", features = ["derive"] }
-futures-preview = { version = "0.3.0-alpha.6", features = ["tokio-compat"] }
+futures = "0.1.24"
 http = "0.1.10"
 juniper = "0.10.0"
 log = "0.4.5"
 percent-encoding = "1.0.1"
-pin-utils = "0.1.0-alpha.2"
 serde = { version = "1.0.75", features = ["derive"] }
 serde_json = "1.0.26"
 serde_qs = "0.4.1"
 tokio = "0.1.8"
 tokio-threadpool = "0.1.6"
-
-[build-dependencies]
-version_check = "0.1.4"
 
 [dev-dependencies]
 pretty_env_logger = "0.2.4"

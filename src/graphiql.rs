@@ -3,11 +3,7 @@ use finchers::error::{Error, Never};
 use finchers::output::payload::Once;
 use finchers::output::{Output, OutputContext};
 
-use std::pin::PinMut;
-
-use futures::future::Future;
-use futures::task;
-use futures::task::Poll;
+use futures::{Future, Poll};
 
 use bytes::Bytes;
 use http::{header, Response};
@@ -46,10 +42,11 @@ impl<'a> Endpoint<'a> for GraphiQL {
 pub struct GraphiQLFuture<'a>(&'a Bytes);
 
 impl<'a> Future for GraphiQLFuture<'a> {
-    type Output = Result<(GraphiQLSource,), Error>;
+    type Item = (GraphiQLSource,);
+    type Error = Error;
 
-    fn poll(self: PinMut<'_, Self>, _: &mut task::Context<'_>) -> Poll<Self::Output> {
-        Poll::Ready(Ok((GraphiQLSource(self.0.clone()),)))
+    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
+        Ok((GraphiQLSource(self.0.clone()),).into())
     }
 }
 
