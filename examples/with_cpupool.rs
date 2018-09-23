@@ -7,7 +7,7 @@ extern crate log;
 extern crate pretty_env_logger;
 
 use finchers::prelude::*;
-use finchers_juniper::execute_nonblocking;
+use finchers_juniper::execute_with_spawner;
 
 use futures_cpupool::CpuPool;
 use juniper::{graphql_object, EmptyMutation, RootNode};
@@ -34,7 +34,7 @@ fn main() {
 
     let graphql_endpoint = endpoint::syntax::eos()
         .and(fetch_context)
-        .wrap(execute_nonblocking(schema).with_spawner(CpuPool::new_num_cpus()));
+        .wrap(execute_with_spawner(schema, CpuPool::new_num_cpus()));
 
     log::info!("Listening on http://127.0.0.1:4000/");
     finchers::launch(graphql_endpoint).start("127.0.0.1:4000");
