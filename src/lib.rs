@@ -4,26 +4,39 @@
 #![warn(
     missing_docs,
     missing_debug_implementations,
-    future_incompatible,
     nonstandard_style,
     rust_2018_idioms,
     unused,
 )]
+// #![warn(rust_2018_compatibility)]
 #![cfg_attr(feature = "strict", deny(warnings))]
 #![cfg_attr(feature = "strict", doc(test(attr(deny(warnings)))))]
+
+extern crate bytes;
+extern crate failure;
+extern crate finchers;
+#[macro_use]
+extern crate futures;
+extern crate juniper;
+#[macro_use]
+extern crate log;
+extern crate percent_encoding;
+#[macro_use]
+extern crate serde;
+extern crate http;
+extern crate serde_json;
+extern crate serde_qs;
+extern crate tokio;
+extern crate tokio_threadpool;
 
 mod execute;
 mod graphiql;
 mod maybe_done;
 mod request;
 
-pub use crate::execute::nonblocking::{
-    execute as execute_nonblocking, Execute as ExecuteNonblocking,
-};
-pub use crate::execute::with_spawner::{
-    execute as execute_with_spawner, Execute as ExecuteWithSpawner,
-};
-pub use crate::execute::{execute, Execute};
+pub use execute::nonblocking::{execute as execute_nonblocking, Execute as ExecuteNonblocking};
+pub use execute::with_spawner::{execute as execute_with_spawner, Execute as ExecuteWithSpawner};
+pub use execute::{execute, Execute};
 
-pub use crate::graphiql::{graphiql, GraphiQL};
-pub use crate::request::{request, GraphQLRequest, GraphQLResponse, RequestEndpoint};
+pub use graphiql::{graphiql, GraphiQL};
+pub use request::{request, GraphQLRequest, GraphQLResponse, RequestEndpoint};

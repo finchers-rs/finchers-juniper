@@ -2,7 +2,9 @@ extern crate finchers;
 extern crate finchers_juniper;
 extern crate futures; // 0.1
 extern crate futures_cpupool;
+#[macro_use]
 extern crate juniper;
+#[macro_use]
 extern crate log;
 extern crate pretty_env_logger;
 
@@ -10,7 +12,7 @@ use finchers::prelude::*;
 use finchers_juniper::execute_with_spawner;
 
 use futures_cpupool::CpuPool;
-use juniper::{graphql_object, EmptyMutation, RootNode};
+use juniper::{EmptyMutation, RootNode};
 
 struct MyContext {
     _priv: (),
@@ -36,6 +38,6 @@ fn main() {
         .and(fetch_context)
         .wrap(execute_with_spawner(schema, CpuPool::new_num_cpus()));
 
-    log::info!("Listening on http://127.0.0.1:4000/");
+    info!("Listening on http://127.0.0.1:4000/");
     finchers::launch(graphql_endpoint).start("127.0.0.1:4000");
 }

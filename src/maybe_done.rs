@@ -2,18 +2,18 @@ use futures::{Async, Future, Poll};
 use std::mem;
 
 #[derive(Debug)]
-pub enum MaybeDone<F: Future> {
+pub(crate) enum MaybeDone<F: Future> {
     NotYet(F),
     Done(F::Item),
     Gone,
 }
 
 impl<F: Future> MaybeDone<F> {
-    pub fn new(f: F) -> Self {
+    pub(crate) fn new(f: F) -> Self {
         MaybeDone::NotYet(f)
     }
 
-    pub fn poll_ready(&mut self) -> Poll<(), F::Error> {
+    pub(crate) fn poll_ready(&mut self) -> Poll<(), F::Error> {
         let res = match *self {
             MaybeDone::NotYet(ref mut f) => f.poll()?,
             MaybeDone::Done(_) => return Ok(Async::Ready(())),
@@ -28,7 +28,7 @@ impl<F: Future> MaybeDone<F> {
         }
     }
 
-    pub fn take_ok(&mut self) -> Option<F::Item> {
+    pub(crate) fn take_ok(&mut self) -> Option<F::Item> {
         match mem::replace(self, MaybeDone::Gone) {
             MaybeDone::Done(ok) => Some(ok),
             _ => None,

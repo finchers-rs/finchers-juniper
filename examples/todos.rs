@@ -1,19 +1,21 @@
+#[macro_use]
 extern crate failure;
+#[macro_use]
 extern crate finchers;
 extern crate finchers_juniper;
+#[macro_use]
 extern crate juniper;
+#[macro_use]
 extern crate log;
 extern crate pretty_env_logger;
 
-use finchers::path;
 use finchers::prelude::*;
 
 use failure::Fallible;
-use log::info;
 use std::sync::Arc;
 
-use crate::business::Repository;
-use crate::graphql::{create_schema, Context};
+use business::Repository;
+use graphql::{create_schema, Context};
 
 fn main() -> Fallible<()> {
     pretty_env_logger::try_init()?;
@@ -36,7 +38,7 @@ fn main() -> Fallible<()> {
 
 /// The implelentation of business logic.
 mod business {
-    use failure::{format_err, Fallible};
+    use failure::Fallible;
     use std::collections::HashMap;
     use std::sync::RwLock;
 
@@ -98,10 +100,10 @@ mod business {
 /// The definition of GraphQL schema and resolvers.
 mod graphql {
     use juniper;
-    use juniper::{graphql_object, FieldResult, RootNode};
+    use juniper::{FieldResult, RootNode};
     use std::sync::Arc;
 
-    use crate::business::Repository;
+    use business::Repository;
 
     #[derive(Debug)]
     pub struct Context {
@@ -112,7 +114,7 @@ mod graphql {
 
     #[derive(Debug)]
     #[repr(transparent)]
-    pub struct Todo(crate::business::Todo);
+    pub struct Todo(::business::Todo);
 
     graphql_object!(Todo: () |&self| {
         field id() -> i32 { self.0.id }

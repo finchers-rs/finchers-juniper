@@ -2,15 +2,14 @@ use finchers::endpoint::wrapper::Wrapper;
 use finchers::endpoint::{Context, Endpoint, EndpointResult};
 use finchers::error::Error;
 
-use futures::try_ready;
 use futures::{Future, Poll};
 
 use juniper::{GraphQLType, RootNode};
 use std::fmt;
 use tokio_threadpool::blocking;
 
-use crate::maybe_done::MaybeDone;
-use crate::request::{GraphQLResponse, RequestEndpoint};
+use maybe_done::MaybeDone;
+use request::{GraphQLResponse, RequestEndpoint};
 
 /// Create a `Wrapper` for building a GraphQL endpoint using the specified `RootNode`.
 ///
@@ -81,7 +80,7 @@ where
     fn wrap(self, endpoint: E) -> Self::Endpoint {
         ExecuteEndpoint {
             context: endpoint,
-            request: crate::request::request(),
+            request: ::request::request(),
             root_node: self.root_node,
             use_blocking: self.use_blocking,
         }
@@ -185,7 +184,7 @@ where
         if self.endpoint.use_blocking {
             blocking(move || self.execute())
                 .map(|x| x.map(|response| (response,)))
-                .map_err(finchers::error::fail)
+                .map_err(::finchers::error::fail)
         } else {
             let response = self.execute();
             Ok((response,).into())
@@ -200,18 +199,16 @@ pub(crate) mod nonblocking {
 
     use futures::future;
     use futures::sync::oneshot;
-    use futures::try_ready;
     use futures::{Async, Future, Poll};
     use tokio::executor::{DefaultExecutor, Executor as _TokioExecutor};
 
     use juniper::{GraphQLType, RootNode};
-    use log::trace;
     use std::fmt;
     use std::sync::Arc;
     use tokio_threadpool::{blocking, BlockingError};
 
-    use crate::maybe_done::MaybeDone;
-    use crate::request::{GraphQLResponse, RequestEndpoint};
+    use maybe_done::MaybeDone;
+    use request::{GraphQLResponse, RequestEndpoint};
 
     /// Create a `Wrapper` for building a GraphQL endpoint using the specified `RootNode`.
     ///
@@ -284,7 +281,7 @@ pub(crate) mod nonblocking {
         fn wrap(self, endpoint: E) -> Self::Endpoint {
             ExecuteEndpoint {
                 context: endpoint,
-                request: crate::request::request(),
+                request: ::request::request(),
                 root_node: Arc::new(self.root_node),
                 use_blocking: self.use_blocking,
             }
@@ -350,6 +347,7 @@ pub(crate) mod nonblocking {
         QueryT::TypeInfo: Send + Sync + 'static,
         MutationT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
         MutationT::TypeInfo: Send + Sync + 'static,
+        CtxT: 'a,
     {
         context: MaybeDone<E::Future>,
         request: MaybeDone<<RequestEndpoint as Endpoint<'a>>::Future>,
@@ -375,7 +373,7 @@ pub(crate) mod nonblocking {
                     return execute
                         .poll()
                         .map(|x| x.map(|response| (response,)))
-                        .map_err(finchers::error::fail);
+                        .map_err(::finchers::error::fail);
                 }
 
                 try_ready!(self.context.poll_ready());
@@ -407,7 +405,7 @@ pub(crate) mod nonblocking {
     {
         let (tx, rx) = oneshot::channel();
         let mut tx_opt = Some(tx);
-        let mut future = std::panic::AssertUnwindSafe(future).catch_unwind();
+        let mut future = ::std::panic::AssertUnwindSafe(future).catch_unwind();
         let future = future::poll_fn(move || {
             let data = match future.poll() {
                 Ok(Async::NotReady) => return Ok(Async::NotReady),
@@ -425,7 +423,7 @@ pub(crate) mod nonblocking {
 
     #[derive(Debug)]
     struct JoinHandle<T, E> {
-        inner: oneshot::Receiver<std::thread::Result<Result<T, E>>>,
+        inner: oneshot::Receiver<::std::thread::Result<Result<T, E>>>,
     }
 
     impl<T, E> Future for JoinHandle<T, E> {
@@ -436,8 +434,8 @@ pub(crate) mod nonblocking {
             match self.inner.poll() {
                 Ok(Async::NotReady) => Ok(Async::NotReady),
                 Ok(Async::Ready(Ok(res))) => res.map(Async::Ready),
-                Ok(Async::Ready(Err(panic_err))) => std::panic::resume_unwind(panic_err),
-                Err(canceled) => std::panic::resume_unwind(Box::new(canceled)),
+                Ok(Async::Ready(Err(panic_err))) => ::std::panic::resume_unwind(panic_err),
+                Err(canceled) => ::std::panic::resume_unwind(Box::new(canceled)),
             }
         }
     }
@@ -451,18 +449,16 @@ pub(crate) mod with_spawner {
     use futures::future;
     use futures::future::Executor;
     use futures::sync::oneshot;
-    use futures::try_ready;
     use futures::{Async, Future, Poll};
 
     use juniper::{GraphQLType, RootNode};
-    use log::trace;
     use std::fmt;
     use std::sync::Arc;
 
-    use crate::maybe_done::MaybeDone;
-    use crate::request::{GraphQLResponse, RequestEndpoint};
+    use maybe_done::MaybeDone;
+    use request::{GraphQLResponse, RequestEndpoint};
 
-    pub type Task = Box<dyn Future<Item = (), Error = ()> + Send + 'static>;
+    type Task = Box<dyn Future<Item = (), Error = ()> + Send + 'static>;
 
     /// Create a `Wrapper` for building a GraphQL endpoint using the specified `RootNode`.
     ///
@@ -523,7 +519,7 @@ pub(crate) mod with_spawner {
         fn wrap(self, endpoint: E) -> Self::Endpoint {
             ExecuteEndpoint {
                 context: endpoint,
-                request: crate::request::request(),
+                request: ::request::request(),
                 root_node: Arc::new(self.root_node),
                 spawner: self.spawner,
             }
@@ -593,6 +589,7 @@ pub(crate) mod with_spawner {
         MutationT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
         MutationT::TypeInfo: Send + Sync + 'static,
         CtxT: Send + 'static,
+        Sp: 'a,
     {
         context: MaybeDone<E::Future>,
         request: MaybeDone<<RequestEndpoint as Endpoint<'a>>::Future>,
@@ -653,7 +650,7 @@ pub(crate) mod with_spawner {
     {
         let (tx, rx) = oneshot::channel();
         let mut tx_opt = Some(tx);
-        let mut future = std::panic::AssertUnwindSafe(future).catch_unwind();
+        let mut future = ::std::panic::AssertUnwindSafe(future).catch_unwind();
         let future = future::poll_fn(move || {
             let data = match future.poll() {
                 Ok(Async::NotReady) => return Ok(Async::NotReady),
@@ -671,7 +668,7 @@ pub(crate) mod with_spawner {
 
     #[derive(Debug)]
     struct JoinHandle<T, E> {
-        inner: oneshot::Receiver<std::thread::Result<Result<T, E>>>,
+        inner: oneshot::Receiver<::std::thread::Result<Result<T, E>>>,
     }
 
     impl<T, E> Future for JoinHandle<T, E> {
@@ -682,8 +679,8 @@ pub(crate) mod with_spawner {
             match self.inner.poll() {
                 Ok(Async::NotReady) => Ok(Async::NotReady),
                 Ok(Async::Ready(Ok(res))) => res.map(Async::Ready),
-                Ok(Async::Ready(Err(panic_err))) => std::panic::resume_unwind(panic_err),
-                Err(canceled) => std::panic::resume_unwind(Box::new(canceled)),
+                Ok(Async::Ready(Err(panic_err))) => ::std::panic::resume_unwind(panic_err),
+                Err(canceled) => ::std::panic::resume_unwind(Box::new(canceled)),
             }
         }
     }

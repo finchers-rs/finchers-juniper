@@ -1,6 +1,7 @@
 extern crate finchers;
 extern crate finchers_juniper;
 extern crate juniper;
+#[macro_use]
 extern crate percent_encoding;
 
 use std::sync::Arc;
@@ -14,7 +15,7 @@ use juniper::http::tests as http_tests;
 use juniper::tests::model::Database;
 use juniper::{EmptyMutation, RootNode};
 
-use percent_encoding::{define_encode_set, utf8_percent_encode, QUERY_ENCODE_SET};
+use percent_encoding::{utf8_percent_encode, QUERY_ENCODE_SET};
 
 type Schema = RootNode<'static, Database, EmptyMutation<Database>>;
 
