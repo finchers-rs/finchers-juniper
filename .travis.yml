@@ -17,7 +17,7 @@ matrix:
   fast_finish: true
 
   include:
-    - rust: beta
+    - rust: stable
       before_script:
         - rustup component add rustfmt-preview
         - export CARGO_INCREMENTAL=0
@@ -27,6 +27,13 @@ matrix:
         - cargo fmt -- --check
         - if [[ "${TRAVIS_PULL_REQUEST_BRANCH:-}" = release-* ]]; then cargo package; fi
 
+    - rust: beta
+      before_script:
+        - export CARGO_INCREMENTAL=0
+      script:
+        - cargo update
+        - cargo test
+
     - rust: nightly
       before_script:
         - export CARGO_INCREMENTAL=0
@@ -34,14 +41,15 @@ matrix:
         - cargo update
         - cargo test
 
-    - rust: beta
+    - rust: stable
       env: DEPLOY_API_DOC
       before_script:
       script:
         - rm -rf target/doc
         - cargo update
-        - cargo doc
+        - cargo doc --no-deps
         - rm -f target/doc/.lock
+        - echo '<meta http-equiv="refresh" content="0;URL=finchers_juniper/index.html">' > target/doc/index.html
       deploy:
         provider: pages
         skip_cleanup: true

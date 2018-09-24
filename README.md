@@ -9,7 +9,7 @@ A set of extensions for integrating [Juniper] endpoints.
 
 ## Documentation
 
-* [API Documentation (master)](https://finchers-rs.github.io/finchers-juniper/finchers_juniper/index.html)
+* [API Documentation (master)](https://finchers-rs.github.io/finchers-juniper)
 
 ## License
 
