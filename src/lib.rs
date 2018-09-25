@@ -1,6 +1,9 @@
 //! Endpoints for supporting Juniper integration.
 
-#![doc(html_root_url = "https://docs.rs/finchers-juniper/0.1.0-alpha.3")]
+// master
+#![doc(html_root_url = "https://finchers-rs.github.io/finchers-juniper")]
+// released
+//#![doc(html_root_url = "https://finchers-rs.github.io/docs/finchers-juniper/v0.1.0-alpha.3")]
 #![warn(
     missing_docs,
     missing_debug_implementations,

@@ -1,6 +1,5 @@
 use finchers::endpoint::{Context, Endpoint, EndpointResult};
 use finchers::error::{Error, Never};
-use finchers::output::payload::Once;
 use finchers::output::{Output, OutputContext};
 
 use futures::{Future, Poll};
@@ -54,13 +53,13 @@ impl<'a> Future for GraphiQLFuture<'a> {
 pub struct GraphiQLSource(Bytes);
 
 impl Output for GraphiQLSource {
-    type Body = Once<Bytes>;
+    type Body = Bytes;
     type Error = Never;
 
     fn respond(self, _: &mut OutputContext<'_>) -> Result<Response<Self::Body>, Self::Error> {
         Ok(Response::builder()
             .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-            .body(Once::new(self.0))
-            .expect("valid response"))
+            .body(self.0)
+            .expect("should be a valid response"))
     }
 }

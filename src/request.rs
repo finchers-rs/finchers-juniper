@@ -3,7 +3,6 @@ use finchers::endpoints::body;
 use finchers::error;
 use finchers::error::Error;
 use finchers::input::with_get_cx;
-use finchers::output::payload::Once;
 use finchers::output::{Output, OutputContext};
 
 use futures::{Future, Poll};
@@ -211,7 +210,7 @@ pub struct GraphQLResponse {
 }
 
 impl Output for GraphQLResponse {
-    type Body = Once<Vec<u8>>;
+    type Body = Vec<u8>;
     type Error = Error;
 
     fn respond(self, _: &mut OutputContext<'_>) -> Result<Response<Self::Body>, Self::Error> {
@@ -224,7 +223,7 @@ impl Output for GraphQLResponse {
         Ok(Response::builder()
             .status(status)
             .header(header::CONTENT_TYPE, "application/json")
-            .body(Once::new(body))
-            .expect("valid response"))
+            .body(body)
+            .expect("should be a valid response"))
     }
 }
