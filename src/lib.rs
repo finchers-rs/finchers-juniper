@@ -1,3 +1,5 @@
+#![cfg_attr(feature = "extern-prelude", feature(extern_prelude))]
+
 //! Endpoints for supporting Juniper integration.
 
 // master

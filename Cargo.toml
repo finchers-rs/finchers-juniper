@@ -7,15 +7,23 @@ Endpoints for supporting Juniper integration
 """
 license = "MIT OR Apache-2.0"
 readme = "README.md"
-homepage = "https://github.com/finchers-rs/finchers-juniper"
 repository = "https://github.com/finchers-rs/finchers-juniper.git"
-documentation = "https://docs.rs/finchers-juniper"
+documentation = "https://finchers-rs.github.io/docs"
+
+[package.metadata.docs.rs]
+features = [
+  # FIXME: remove it as soon as the rustc version used in docs.rs is updated
+  "extern-prelude",
+]
 
 [features]
 strict = []
 
+# FIXME: remove it as soon as the rustc version used in docs.rs is updated
+extern-prelude = []
+
 [dependencies]
-finchers = "0.12.0-alpha.6"
+finchers = "0.12.0-alpha.7"
 
 bytes = "0.4.9"
 failure = { version = "0.1.2", features = ["derive"] }
@@ -34,6 +42,3 @@ tokio-threadpool = "0.1.6"
 pretty_env_logger = "0.2.4"
 juniper = { version = "0.10.0", features = ["expose-test-schema", "serde_json"] }
 futures-cpupool = "0.1.8"
-
-[patch.crates-io]
-finchers = { git = "https://github.com/finchers-rs/finchers.git", branch = "master" }
