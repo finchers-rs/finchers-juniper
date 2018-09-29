@@ -13,8 +13,7 @@ use std::fmt;
 use std::sync::Arc;
 use tokio_threadpool::{blocking, BlockingError};
 
-use super::maybe_done::MaybeDone;
-use request::{GraphQLResponse, RequestEndpoint};
+use request::{GraphQLResponse, RequestEndpoint, RequestFuture};
 
 /// Create a `Wrapper` for building a GraphQL endpoint using the specified `RootNode`.
 ///
@@ -30,16 +29,12 @@ where
     MutationT::TypeInfo: Send + Sync + 'static,
     CtxT: Send + 'static,
 {
-    Nonblocking {
-        root_node,
-        use_blocking: true,
-    }
+    Nonblocking { root_node }
 }
 
 #[allow(missing_docs)]
 pub struct Nonblocking<QueryT: GraphQLType, MutationT: GraphQLType> {
     root_node: RootNode<'static, QueryT, MutationT>,
-    use_blocking: bool,
 }
 
 impl<QueryT, MutationT> fmt::Debug for Nonblocking<QueryT, MutationT>
@@ -49,22 +44,6 @@ where
 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.debug_struct("Nonblocking").finish()
-    }
-}
-
-impl<QueryT, MutationT> Nonblocking<QueryT, MutationT>
-where
-    QueryT: GraphQLType,
-    MutationT: GraphQLType,
-{
-    /// Sets whether to use the Tokio's blocking API when executing the GraphQL query.
-    ///
-    /// The default value is `true`.
-    pub fn use_blocking(self, enabled: bool) -> Self {
-        Nonblocking {
-            use_blocking: enabled,
-            ..self
-        }
     }
 }
 
@@ -83,7 +62,6 @@ where
             context: endpoint::cloned(()),
             request: ::request::request(),
             root_node: Arc::new(self.root_node),
-            use_blocking: self.use_blocking,
         }
     }
 }
@@ -105,7 +83,6 @@ where
             context: endpoint,
             request: ::request::request(),
             root_node: Arc::new(self.root_node),
-            use_blocking: self.use_blocking,
         }
     }
 }
@@ -114,7 +91,6 @@ pub struct NonblockingEndpoint<E, QueryT: GraphQLType, MutationT: GraphQLType> {
     context: E,
     request: RequestEndpoint,
     root_node: Arc<RootNode<'static, QueryT, MutationT>>,
-    use_blocking: bool,
 }
 
 impl<E, QueryT, MutationT> fmt::Debug for NonblockingEndpoint<E, QueryT, MutationT>
@@ -128,7 +104,6 @@ where
             .debug_struct("ExecuteEndpoint")
             .field("context", &self.context)
             .field("request", &self.request)
-            .field("use_blocking", &self.use_blocking)
             .finish()
     }
 }
@@ -149,9 +124,8 @@ where
         let context = self.context.apply(cx)?;
         let request = self.request.apply(cx)?;
         Ok(NonblockingFuture {
-            context: MaybeDone::new(context),
-            request: MaybeDone::new(request),
-            execute: None,
+            inner: context.join(request),
+            handle: None,
             endpoint: self,
         })
     }
@@ -167,9 +141,8 @@ where
     MutationT::TypeInfo: Send + Sync + 'static,
     CtxT: 'a,
 {
-    context: MaybeDone<E::Future>,
-    request: MaybeDone<<RequestEndpoint as Endpoint<'a>>::Future>,
-    execute: Option<JoinHandle<GraphQLResponse, BlockingError>>,
+    inner: future::Join<E::Future, RequestFuture<'a>>,
+    handle: Option<JoinHandle<GraphQLResponse, BlockingError>>,
     endpoint: &'a NonblockingEndpoint<E, QueryT, MutationT>,
 }
 
@@ -187,30 +160,23 @@ where
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
-            if let Some(ref mut execute) = self.execute {
-                return execute
-                    .poll()
-                    .map(|x| x.map(|response| (response,)))
-                    .map_err(::finchers::error::fail);
+            match self.handle {
+                Some(ref mut handle) => {
+                    return handle
+                        .poll()
+                        .map(|x| x.map(|response| (response,)))
+                        .map_err(::finchers::error::fail)
+                }
+                None => {
+                    let ((context,), (request,)) = try_ready!(self.inner.poll());
+                    let root_node = self.endpoint.root_node.clone();
+                    trace!("spawn a GraphQL task (with Tokio's blocking API)");
+                    let future =
+                        future::poll_fn(move || blocking(|| request.execute(&root_node, &context)));
+                    let handle = spawn_with_handle(future);
+                    self.handle = Some(handle);
+                }
             }
-
-            try_ready!(self.context.poll_ready());
-            try_ready!(self.request.poll_ready());
-            let (context,) = self
-                .context
-                .take_ok()
-                .expect("The context has already taken");
-            let (request,) = self
-                .request
-                .take_ok()
-                .expect("The request has already taken");
-            let root_node = self.endpoint.root_node.clone();
-
-            trace!("spawn a GraphQL task (with Tokio's blocking API)");
-            let future =
-                future::poll_fn(move || blocking(|| request.execute(&root_node, &context)));
-            let handle = spawn_with_handle(future);
-            self.execute = Some(handle);
         }
     }
 }

@@ -12,8 +12,7 @@ use juniper::{GraphQLType, RootNode};
 use std::fmt;
 use std::sync::Arc;
 
-use super::maybe_done::MaybeDone;
-use request::{GraphQLResponse, RequestEndpoint};
+use request::{GraphQLResponse, RequestEndpoint, RequestFuture};
 
 type Task = Box<dyn Future<Item = (), Error = ()> + Send + 'static>;
 
@@ -142,9 +141,8 @@ where
         let context = self.context.apply(cx)?;
         let request = self.request.apply(cx)?;
         Ok(WithSpawnerFuture {
-            context: MaybeDone::new(context),
-            request: MaybeDone::new(request),
-            execute: None,
+            inner: context.join(request),
+            handle: None,
             endpoint: self,
         })
     }
@@ -161,9 +159,8 @@ where
     CtxT: Send + 'static,
     Sp: 'a,
 {
-    context: MaybeDone<E::Future>,
-    request: MaybeDone<<RequestEndpoint as Endpoint<'a>>::Future>,
-    execute: Option<JoinHandle<GraphQLResponse, ()>>,
+    inner: future::Join<E::Future, RequestFuture<'a>>,
+    handle: Option<JoinHandle<GraphQLResponse, ()>>,
     endpoint: &'a WithSpawnerEndpoint<E, QueryT, MutationT, Sp>,
 }
 
@@ -183,29 +180,23 @@ where
 
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
-            if let Some(ref mut execute) = self.execute {
-                return execute
-                    .poll()
-                    .map(|x| x.map(|response| (response,)))
-                    .map_err(|_| unreachable!());
+            match self.handle {
+                Some(ref mut handle) => {
+                    return handle
+                        .poll()
+                        .map(|x| x.map(|response| (response,)))
+                        .map_err(|_| unreachable!());
+                }
+                None => {
+                    trace!("spawn a GraphQL task");
+                    let ((context,), (request,)) = try_ready!(self.inner.poll());
+                    let root_node = self.endpoint.root_node.clone();
+                    let future =
+                        future::poll_fn(move || Ok(request.execute(&root_node, &context).into()));
+                    let handle = spawn_with_handle(future, &self.endpoint.spawner);
+                    self.handle = Some(handle);
+                }
             }
-
-            try_ready!(self.context.poll_ready());
-            try_ready!(self.request.poll_ready());
-            let (context,) = self
-                .context
-                .take_ok()
-                .expect("The context has already taken");
-            let (request,) = self
-                .request
-                .take_ok()
-                .expect("The request has already taken");
-            let root_node = self.endpoint.root_node.clone();
-
-            trace!("spawn a GraphQL task");
-            let future = future::poll_fn(move || Ok(request.execute(&root_node, &context).into()));
-            let handle = spawn_with_handle(future, &self.endpoint.spawner);
-            self.execute = Some(handle);
         }
     }
 }
