@@ -1,5 +1,5 @@
 use finchers::endpoint::wrapper::Wrapper;
-use finchers::endpoint::{Context, Endpoint, EndpointResult};
+use finchers::endpoint::{ApplyContext, ApplyResult, Endpoint};
 use finchers::error::Error;
 
 use futures::{Future, Poll};
@@ -124,7 +124,7 @@ where
     type Output = (GraphQLResponse,);
     type Future = ExecuteFuture<'a, E, QueryT, MutationT, CtxT>;
 
-    fn apply(&'a self, cx: &mut Context<'_>) -> EndpointResult<Self::Future> {
+    fn apply(&'a self, cx: &mut ApplyContext<'_>) -> ApplyResult<Self::Future> {
         let context = self.context.apply(cx)?;
         let request = self.request.apply(cx)?;
         Ok(ExecuteFuture {
@@ -194,7 +194,7 @@ where
 
 pub(crate) mod nonblocking {
     use finchers::endpoint::wrapper::Wrapper;
-    use finchers::endpoint::{Context, Endpoint, EndpointResult};
+    use finchers::endpoint::{ApplyContext, ApplyResult, Endpoint};
     use finchers::error::Error;
 
     use futures::future;
@@ -327,7 +327,7 @@ pub(crate) mod nonblocking {
         type Output = (GraphQLResponse,);
         type Future = ExecuteFuture<'a, E, QueryT, MutationT, CtxT>;
 
-        fn apply(&'a self, cx: &mut Context<'_>) -> EndpointResult<Self::Future> {
+        fn apply(&'a self, cx: &mut ApplyContext<'_>) -> ApplyResult<Self::Future> {
             let context = self.context.apply(cx)?;
             let request = self.request.apply(cx)?;
             Ok(ExecuteFuture {
@@ -443,7 +443,7 @@ pub(crate) mod nonblocking {
 
 pub(crate) mod with_spawner {
     use finchers::endpoint::wrapper::Wrapper;
-    use finchers::endpoint::{Context, Endpoint, EndpointResult};
+    use finchers::endpoint::{ApplyContext, ApplyResult, Endpoint};
     use finchers::error::Error;
 
     use futures::future;
@@ -568,7 +568,7 @@ pub(crate) mod with_spawner {
         type Output = (GraphQLResponse,);
         type Future = ExecuteFuture<'a, E, QueryT, MutationT, CtxT, Sp>;
 
-        fn apply(&'a self, cx: &mut Context<'_>) -> EndpointResult<Self::Future> {
+        fn apply(&'a self, cx: &mut ApplyContext<'_>) -> ApplyResult<Self::Future> {
             let context = self.context.apply(cx)?;
             let request = self.request.apply(cx)?;
             Ok(ExecuteFuture {

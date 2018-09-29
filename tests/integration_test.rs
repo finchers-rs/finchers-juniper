@@ -4,8 +4,6 @@ extern crate juniper;
 #[macro_use]
 extern crate percent_encoding;
 
-use std::sync::Arc;
-
 use finchers::endpoint::syntax;
 use finchers::local;
 use finchers::prelude::*;
@@ -76,12 +74,10 @@ fn test_finchers_integration() {
     let schema = Schema::new(Database::new(), EmptyMutation::<Database>::new());
     let endpoint = syntax::eos()
         .and(finchers_juniper::request())
-        .and(endpoint::value(Arc::new(database)))
-        .and(endpoint::value(Arc::new(schema)))
+        .and(endpoint::by_ref(database))
+        .and(endpoint::by_ref(schema))
         .and_then(
-            |req: GraphQLRequest, db: Arc<Database>, schema: Arc<Schema>| {
-                Ok(req.execute(&*schema, &*db))
-            },
+            |req: GraphQLRequest, db: &Database, schema: &Schema| Ok(req.execute(schema, db)),
         );
     let integration = TestFinchersIntegration {
         endpoint: &endpoint,

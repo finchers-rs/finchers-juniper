@@ -1,4 +1,4 @@
-use finchers::endpoint::{Context, Endpoint, EndpointResult};
+use finchers::endpoint::{ApplyContext, ApplyResult, Endpoint};
 use finchers::error::{Error, Never};
 use finchers::output::{Output, OutputContext};
 
@@ -32,7 +32,7 @@ impl<'a> Endpoint<'a> for GraphiQL {
     type Output = (GraphiQLSource,);
     type Future = GraphiQLFuture<'a>;
 
-    fn apply(&'a self, _: &mut Context<'_>) -> EndpointResult<Self::Future> {
+    fn apply(&'a self, _: &mut ApplyContext<'_>) -> ApplyResult<Self::Future> {
         Ok(GraphiQLFuture(&self.source))
     }
 }

@@ -1,8 +1,8 @@
-use finchers::endpoint::{Context, Endpoint, EndpointResult};
+use finchers::endpoint::with_get_cx;
+use finchers::endpoint::{ApplyContext, ApplyResult, Endpoint};
 use finchers::endpoints::body;
 use finchers::error;
 use finchers::error::Error;
-use finchers::input::with_get_cx;
 use finchers::output::{Output, OutputContext};
 
 use futures::{Future, Poll};
@@ -44,7 +44,7 @@ impl<'a> Endpoint<'a> for RequestEndpoint {
     type Output = (GraphQLRequest,);
     type Future = RequestFuture<'a>;
 
-    fn apply(&'a self, cx: &mut Context<'_>) -> EndpointResult<Self::Future> {
+    fn apply(&'a self, cx: &mut ApplyContext<'_>) -> ApplyResult<Self::Future> {
         if cx.input().method() == Method::GET {
             Ok(RequestFuture {
                 kind: RequestKind::Get,

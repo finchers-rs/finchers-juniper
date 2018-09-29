@@ -21,7 +21,7 @@ fn main() -> Fallible<()> {
     pretty_env_logger::try_init()?;
 
     let repository = Arc::new(Repository::init());
-    let context_endpoint = endpoint::value(repository).map(|repository| Context { repository });
+    let context_endpoint = endpoint::cloned(repository).map(|repository| Context { repository });
 
     let graphql_endpoint = path!(/ "graphql" /)
         .and(context_endpoint)
