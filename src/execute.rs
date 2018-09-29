@@ -19,7 +19,7 @@ pub(crate) mod current_thread {
     /// to execute the GraphQL query.
     pub fn execute<QueryT, MutationT, CtxT>(
         root_node: RootNode<'static, QueryT, MutationT>,
-    ) -> Execute<QueryT, MutationT, CtxT>
+    ) -> Execute<QueryT, MutationT>
     where
         QueryT: GraphQLType<Context = CtxT>,
         MutationT: GraphQLType<Context = CtxT>,
@@ -31,19 +31,15 @@ pub(crate) mod current_thread {
     }
 
     #[allow(missing_docs)]
-    pub struct Execute<QueryT, MutationT, CtxT>
-    where
-        QueryT: GraphQLType<Context = CtxT>,
-        MutationT: GraphQLType<Context = CtxT>,
-    {
+    pub struct Execute<QueryT: GraphQLType, MutationT: GraphQLType> {
         root_node: RootNode<'static, QueryT, MutationT>,
         use_blocking: bool,
     }
 
-    impl<QueryT, MutationT, CtxT> Execute<QueryT, MutationT, CtxT>
+    impl<QueryT, MutationT> Execute<QueryT, MutationT>
     where
-        QueryT: GraphQLType<Context = CtxT>,
-        MutationT: GraphQLType<Context = CtxT>,
+        QueryT: GraphQLType,
+        MutationT: GraphQLType,
     {
         /// Sets whether to use the Tokio's blocking API when executing the GraphQL query.
         ///
@@ -56,10 +52,10 @@ pub(crate) mod current_thread {
         }
     }
 
-    impl<QueryT, MutationT, CtxT> fmt::Debug for Execute<QueryT, MutationT, CtxT>
+    impl<QueryT, MutationT> fmt::Debug for Execute<QueryT, MutationT>
     where
-        QueryT: GraphQLType<Context = CtxT>,
-        MutationT: GraphQLType<Context = CtxT>,
+        QueryT: GraphQLType,
+        MutationT: GraphQLType,
     {
         fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
             formatter
@@ -69,13 +65,13 @@ pub(crate) mod current_thread {
         }
     }
 
-    impl<'a, QueryT, MutationT> IntoEndpoint<'a> for Execute<QueryT, MutationT, ()>
+    impl<'a, QueryT, MutationT> IntoEndpoint<'a> for Execute<QueryT, MutationT>
     where
         QueryT: GraphQLType<Context = ()> + 'a,
         MutationT: GraphQLType<Context = ()> + 'a,
     {
         type Output = (GraphQLResponse,);
-        type Endpoint = ExecuteEndpoint<endpoint::Cloned<()>, QueryT, MutationT, ()>;
+        type Endpoint = ExecuteEndpoint<endpoint::Cloned<()>, QueryT, MutationT>;
 
         fn into_endpoint(self) -> Self::Endpoint {
             ExecuteEndpoint {
@@ -87,7 +83,7 @@ pub(crate) mod current_thread {
         }
     }
 
-    impl<'a, E, QueryT, MutationT, CtxT> Wrapper<'a, E> for Execute<QueryT, MutationT, CtxT>
+    impl<'a, E, QueryT, MutationT, CtxT> Wrapper<'a, E> for Execute<QueryT, MutationT>
     where
         E: Endpoint<'a, Output = (CtxT,)>,
         QueryT: GraphQLType<Context = CtxT> + 'a,
@@ -95,7 +91,7 @@ pub(crate) mod current_thread {
         CtxT: 'a,
     {
         type Output = (GraphQLResponse,);
-        type Endpoint = ExecuteEndpoint<E, QueryT, MutationT, CtxT>;
+        type Endpoint = ExecuteEndpoint<E, QueryT, MutationT>;
 
         fn wrap(self, endpoint: E) -> Self::Endpoint {
             ExecuteEndpoint {
@@ -107,22 +103,18 @@ pub(crate) mod current_thread {
         }
     }
 
-    pub struct ExecuteEndpoint<E, QueryT, MutationT, CtxT>
-    where
-        QueryT: GraphQLType<Context = CtxT>,
-        MutationT: GraphQLType<Context = CtxT>,
-    {
+    pub struct ExecuteEndpoint<E, QueryT: GraphQLType, MutationT: GraphQLType> {
         context: E,
         request: RequestEndpoint,
         root_node: RootNode<'static, QueryT, MutationT>,
         use_blocking: bool,
     }
 
-    impl<E, QueryT, MutationT, CtxT> fmt::Debug for ExecuteEndpoint<E, QueryT, MutationT, CtxT>
+    impl<E, QueryT, MutationT> fmt::Debug for ExecuteEndpoint<E, QueryT, MutationT>
     where
         E: fmt::Debug,
-        QueryT: GraphQLType<Context = CtxT>,
-        MutationT: GraphQLType<Context = CtxT>,
+        QueryT: GraphQLType,
+        MutationT: GraphQLType,
     {
         fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
             formatter
@@ -134,7 +126,7 @@ pub(crate) mod current_thread {
         }
     }
 
-    impl<'a, E, QueryT, MutationT, CtxT> Endpoint<'a> for ExecuteEndpoint<E, QueryT, MutationT, CtxT>
+    impl<'a, E, QueryT, MutationT, CtxT> Endpoint<'a> for ExecuteEndpoint<E, QueryT, MutationT>
     where
         E: Endpoint<'a, Output = (CtxT,)>,
         QueryT: GraphQLType<Context = CtxT> + 'a,
@@ -165,7 +157,7 @@ pub(crate) mod current_thread {
     {
         context: MaybeDone<E::Future>,
         request: MaybeDone<<RequestEndpoint as Endpoint<'a>>::Future>,
-        endpoint: &'a ExecuteEndpoint<E, QueryT, MutationT, CtxT>,
+        endpoint: &'a ExecuteEndpoint<E, QueryT, MutationT>,
     }
 
     impl<'a, E, QueryT, MutationT, CtxT> ExecuteFuture<'a, E, QueryT, MutationT, CtxT>
@@ -238,7 +230,7 @@ pub(crate) mod nonblocking {
     /// after receiving the request, by using tokio's `DefaultExecutor`.
     pub fn execute<QueryT, MutationT, CtxT>(
         root_node: RootNode<'static, QueryT, MutationT>,
-    ) -> Execute<QueryT, MutationT, CtxT>
+    ) -> Execute<QueryT, MutationT>
     where
         QueryT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
         QueryT::TypeInfo: Send + Sync + 'static,
@@ -253,29 +245,25 @@ pub(crate) mod nonblocking {
     }
 
     #[allow(missing_docs)]
-    pub struct Execute<QueryT, MutationT, CtxT>
-    where
-        QueryT: GraphQLType<Context = CtxT>,
-        MutationT: GraphQLType<Context = CtxT>,
-    {
+    pub struct Execute<QueryT: GraphQLType, MutationT: GraphQLType> {
         root_node: RootNode<'static, QueryT, MutationT>,
         use_blocking: bool,
     }
 
-    impl<QueryT, MutationT, CtxT> fmt::Debug for Execute<QueryT, MutationT, CtxT>
+    impl<QueryT, MutationT> fmt::Debug for Execute<QueryT, MutationT>
     where
-        QueryT: GraphQLType<Context = CtxT>,
-        MutationT: GraphQLType<Context = CtxT>,
+        QueryT: GraphQLType,
+        MutationT: GraphQLType,
     {
         fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
             formatter.debug_struct("Execute").finish()
         }
     }
 
-    impl<QueryT, MutationT, CtxT> Execute<QueryT, MutationT, CtxT>
+    impl<QueryT, MutationT> Execute<QueryT, MutationT>
     where
-        QueryT: GraphQLType<Context = CtxT>,
-        MutationT: GraphQLType<Context = CtxT>,
+        QueryT: GraphQLType,
+        MutationT: GraphQLType,
     {
         /// Sets whether to use the Tokio's blocking API when executing the GraphQL query.
         ///
@@ -288,7 +276,7 @@ pub(crate) mod nonblocking {
         }
     }
 
-    impl<'a, QueryT, MutationT> IntoEndpoint<'a> for Execute<QueryT, MutationT, ()>
+    impl<'a, QueryT, MutationT> IntoEndpoint<'a> for Execute<QueryT, MutationT>
     where
         QueryT: GraphQLType<Context = ()> + Send + Sync + 'static,
         QueryT::TypeInfo: Send + Sync + 'static,
@@ -296,7 +284,7 @@ pub(crate) mod nonblocking {
         MutationT::TypeInfo: Send + Sync + 'static,
     {
         type Output = (GraphQLResponse,);
-        type Endpoint = ExecuteEndpoint<endpoint::Cloned<()>, QueryT, MutationT, ()>;
+        type Endpoint = ExecuteEndpoint<endpoint::Cloned<()>, QueryT, MutationT>;
 
         fn into_endpoint(self) -> Self::Endpoint {
             ExecuteEndpoint {
@@ -308,7 +296,7 @@ pub(crate) mod nonblocking {
         }
     }
 
-    impl<'a, E, QueryT, MutationT, CtxT> Wrapper<'a, E> for Execute<QueryT, MutationT, CtxT>
+    impl<'a, E, QueryT, MutationT, CtxT> Wrapper<'a, E> for Execute<QueryT, MutationT>
     where
         E: Endpoint<'a, Output = (CtxT,)>,
         QueryT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
@@ -318,7 +306,7 @@ pub(crate) mod nonblocking {
         CtxT: Send + 'static,
     {
         type Output = (GraphQLResponse,);
-        type Endpoint = ExecuteEndpoint<E, QueryT, MutationT, CtxT>;
+        type Endpoint = ExecuteEndpoint<E, QueryT, MutationT>;
 
         fn wrap(self, endpoint: E) -> Self::Endpoint {
             ExecuteEndpoint {
@@ -330,22 +318,18 @@ pub(crate) mod nonblocking {
         }
     }
 
-    pub struct ExecuteEndpoint<E, QueryT, MutationT, CtxT>
-    where
-        QueryT: GraphQLType<Context = CtxT>,
-        MutationT: GraphQLType<Context = CtxT>,
-    {
+    pub struct ExecuteEndpoint<E, QueryT: GraphQLType, MutationT: GraphQLType> {
         context: E,
         request: RequestEndpoint,
         root_node: Arc<RootNode<'static, QueryT, MutationT>>,
         use_blocking: bool,
     }
 
-    impl<E, QueryT, MutationT, CtxT> fmt::Debug for ExecuteEndpoint<E, QueryT, MutationT, CtxT>
+    impl<E, QueryT, MutationT> fmt::Debug for ExecuteEndpoint<E, QueryT, MutationT>
     where
         E: fmt::Debug,
-        QueryT: GraphQLType<Context = CtxT>,
-        MutationT: GraphQLType<Context = CtxT>,
+        QueryT: GraphQLType,
+        MutationT: GraphQLType,
     {
         fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
             formatter
@@ -357,7 +341,7 @@ pub(crate) mod nonblocking {
         }
     }
 
-    impl<'a, E, QueryT, MutationT, CtxT> Endpoint<'a> for ExecuteEndpoint<E, QueryT, MutationT, CtxT>
+    impl<'a, E, QueryT, MutationT, CtxT> Endpoint<'a> for ExecuteEndpoint<E, QueryT, MutationT>
     where
         E: Endpoint<'a, Output = (CtxT,)>,
         QueryT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
@@ -394,7 +378,7 @@ pub(crate) mod nonblocking {
         context: MaybeDone<E::Future>,
         request: MaybeDone<<RequestEndpoint as Endpoint<'a>>::Future>,
         execute: Option<JoinHandle<GraphQLResponse, BlockingError>>,
-        endpoint: &'a ExecuteEndpoint<E, QueryT, MutationT, CtxT>,
+        endpoint: &'a ExecuteEndpoint<E, QueryT, MutationT>,
     }
 
     impl<'a, E, QueryT, MutationT, CtxT> Future for ExecuteFuture<'a, E, QueryT, MutationT, CtxT>
@@ -510,7 +494,7 @@ pub(crate) mod with_spawner {
     pub fn execute<QueryT, MutationT, CtxT, Sp>(
         root_node: RootNode<'static, QueryT, MutationT>,
         spawner: Sp,
-    ) -> Execute<QueryT, MutationT, CtxT, Sp>
+    ) -> Execute<QueryT, MutationT, Sp>
     where
         QueryT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
         QueryT::TypeInfo: Send + Sync + 'static,
@@ -523,19 +507,15 @@ pub(crate) mod with_spawner {
     }
 
     #[allow(missing_docs)]
-    pub struct Execute<QueryT, MutationT, CtxT, Sp>
-    where
-        QueryT: GraphQLType<Context = CtxT>,
-        MutationT: GraphQLType<Context = CtxT>,
-    {
+    pub struct Execute<QueryT: GraphQLType, MutationT: GraphQLType, Sp> {
         root_node: RootNode<'static, QueryT, MutationT>,
         spawner: Sp,
     }
 
-    impl<QueryT, MutationT, CtxT, Sp> fmt::Debug for Execute<QueryT, MutationT, CtxT, Sp>
+    impl<QueryT, MutationT, Sp> fmt::Debug for Execute<QueryT, MutationT, Sp>
     where
-        QueryT: GraphQLType<Context = CtxT>,
-        MutationT: GraphQLType<Context = CtxT>,
+        QueryT: GraphQLType,
+        MutationT: GraphQLType,
         Sp: fmt::Debug,
     {
         fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -546,7 +526,7 @@ pub(crate) mod with_spawner {
         }
     }
 
-    impl<'a, QueryT, MutationT, Sp> IntoEndpoint<'a> for Execute<QueryT, MutationT, (), Sp>
+    impl<'a, QueryT, MutationT, Sp> IntoEndpoint<'a> for Execute<QueryT, MutationT, Sp>
     where
         QueryT: GraphQLType<Context = ()> + Send + Sync + 'static,
         QueryT::TypeInfo: Send + Sync + 'static,
@@ -555,7 +535,7 @@ pub(crate) mod with_spawner {
         Sp: Executor<Task> + 'a,
     {
         type Output = (GraphQLResponse,);
-        type Endpoint = ExecuteEndpoint<endpoint::Cloned<()>, QueryT, MutationT, (), Sp>;
+        type Endpoint = ExecuteEndpoint<endpoint::Cloned<()>, QueryT, MutationT, Sp>;
 
         fn into_endpoint(self) -> Self::Endpoint {
             ExecuteEndpoint {
@@ -567,7 +547,7 @@ pub(crate) mod with_spawner {
         }
     }
 
-    impl<'a, E, QueryT, MutationT, CtxT, Sp> Wrapper<'a, E> for Execute<QueryT, MutationT, CtxT, Sp>
+    impl<'a, E, QueryT, MutationT, CtxT, Sp> Wrapper<'a, E> for Execute<QueryT, MutationT, Sp>
     where
         E: Endpoint<'a, Output = (CtxT,)>,
         QueryT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
@@ -578,7 +558,7 @@ pub(crate) mod with_spawner {
         Sp: Executor<Task> + 'a,
     {
         type Output = (GraphQLResponse,);
-        type Endpoint = ExecuteEndpoint<E, QueryT, MutationT, CtxT, Sp>;
+        type Endpoint = ExecuteEndpoint<E, QueryT, MutationT, Sp>;
 
         fn wrap(self, endpoint: E) -> Self::Endpoint {
             ExecuteEndpoint {
@@ -590,22 +570,18 @@ pub(crate) mod with_spawner {
         }
     }
 
-    pub struct ExecuteEndpoint<E, QueryT, MutationT, CtxT, Sp>
-    where
-        QueryT: GraphQLType<Context = CtxT>,
-        MutationT: GraphQLType<Context = CtxT>,
-    {
+    pub struct ExecuteEndpoint<E, QueryT: GraphQLType, MutationT: GraphQLType, Sp> {
         context: E,
         request: RequestEndpoint,
         root_node: Arc<RootNode<'static, QueryT, MutationT>>,
         spawner: Sp,
     }
 
-    impl<E, QueryT, MutationT, CtxT, Sp> fmt::Debug for ExecuteEndpoint<E, QueryT, MutationT, CtxT, Sp>
+    impl<E, QueryT, MutationT, Sp> fmt::Debug for ExecuteEndpoint<E, QueryT, MutationT, Sp>
     where
         E: fmt::Debug,
-        QueryT: GraphQLType<Context = CtxT>,
-        MutationT: GraphQLType<Context = CtxT>,
+        QueryT: GraphQLType,
+        MutationT: GraphQLType,
         Sp: fmt::Debug,
     {
         fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -618,8 +594,7 @@ pub(crate) mod with_spawner {
         }
     }
 
-    impl<'a, E, QueryT, MutationT, CtxT, Sp> Endpoint<'a>
-        for ExecuteEndpoint<E, QueryT, MutationT, CtxT, Sp>
+    impl<'a, E, QueryT, MutationT, CtxT, Sp> Endpoint<'a> for ExecuteEndpoint<E, QueryT, MutationT, Sp>
     where
         E: Endpoint<'a, Output = (CtxT,)>,
         QueryT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
@@ -658,7 +633,7 @@ pub(crate) mod with_spawner {
         context: MaybeDone<E::Future>,
         request: MaybeDone<<RequestEndpoint as Endpoint<'a>>::Future>,
         execute: Option<JoinHandle<GraphQLResponse, ()>>,
-        endpoint: &'a ExecuteEndpoint<E, QueryT, MutationT, CtxT, Sp>,
+        endpoint: &'a ExecuteEndpoint<E, QueryT, MutationT, Sp>,
     }
 
     impl<'a, E, QueryT, MutationT, CtxT, Sp> Future
