@@ -34,14 +34,9 @@ extern crate serde_qs;
 extern crate tokio;
 extern crate tokio_threadpool;
 
-mod execute;
+pub mod execute;
 mod graphiql;
-mod maybe_done;
 mod request;
-
-pub use execute::current_thread::{execute, Execute};
-pub use execute::nonblocking::{execute as execute_nonblocking, Execute as ExecuteNonblocking};
-pub use execute::with_spawner::{execute as execute_with_spawner, Execute as ExecuteWithSpawner};
 
 pub use graphiql::{graphiql, GraphiQL};
 pub use request::{request, GraphQLRequest, GraphQLResponse, RequestEndpoint};

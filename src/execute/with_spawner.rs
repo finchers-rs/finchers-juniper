@@ -12,7 +12,7 @@ use juniper::{GraphQLType, RootNode};
 use std::fmt;
 use std::sync::Arc;
 
-use maybe_done::MaybeDone;
+use super::maybe_done::MaybeDone;
 use request::{GraphQLResponse, RequestEndpoint};
 
 type Task = Box<dyn Future<Item = (), Error = ()> + Send + 'static>;
@@ -21,10 +21,10 @@ type Task = Box<dyn Future<Item = (), Error = ()> + Send + 'static>;
 ///
 /// The endpoint created by this wrapper will spawn a task which executes the GraphQL query
 /// after receiving the request, by using the specified `Executor<T>`.
-pub fn execute<QueryT, MutationT, CtxT, Sp>(
+pub fn with_spawner<QueryT, MutationT, CtxT, Sp>(
     root_node: RootNode<'static, QueryT, MutationT>,
     spawner: Sp,
-) -> Execute<QueryT, MutationT, Sp>
+) -> WithSpawner<QueryT, MutationT, Sp>
 where
     QueryT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
     QueryT::TypeInfo: Send + Sync + 'static,
@@ -33,16 +33,16 @@ where
     CtxT: Send + 'static,
     Sp: Executor<Task>,
 {
-    Execute { root_node, spawner }
+    WithSpawner { root_node, spawner }
 }
 
 #[allow(missing_docs)]
-pub struct Execute<QueryT: GraphQLType, MutationT: GraphQLType, Sp> {
+pub struct WithSpawner<QueryT: GraphQLType, MutationT: GraphQLType, Sp> {
     root_node: RootNode<'static, QueryT, MutationT>,
     spawner: Sp,
 }
 
-impl<QueryT, MutationT, Sp> fmt::Debug for Execute<QueryT, MutationT, Sp>
+impl<QueryT, MutationT, Sp> fmt::Debug for WithSpawner<QueryT, MutationT, Sp>
 where
     QueryT: GraphQLType,
     MutationT: GraphQLType,
@@ -50,13 +50,13 @@ where
 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_struct("Execute")
+            .debug_struct("WithSpawner")
             .field("spawner", &self.spawner)
             .finish()
     }
 }
 
-impl<'a, QueryT, MutationT, Sp> IntoEndpoint<'a> for Execute<QueryT, MutationT, Sp>
+impl<'a, QueryT, MutationT, Sp> IntoEndpoint<'a> for WithSpawner<QueryT, MutationT, Sp>
 where
     QueryT: GraphQLType<Context = ()> + Send + Sync + 'static,
     QueryT::TypeInfo: Send + Sync + 'static,
@@ -65,10 +65,10 @@ where
     Sp: Executor<Task> + 'a,
 {
     type Output = (GraphQLResponse,);
-    type Endpoint = ExecuteEndpoint<endpoint::Cloned<()>, QueryT, MutationT, Sp>;
+    type Endpoint = WithSpawnerEndpoint<endpoint::Cloned<()>, QueryT, MutationT, Sp>;
 
     fn into_endpoint(self) -> Self::Endpoint {
-        ExecuteEndpoint {
+        WithSpawnerEndpoint {
             context: endpoint::cloned(()),
             request: ::request::request(),
             root_node: Arc::new(self.root_node),
@@ -77,7 +77,7 @@ where
     }
 }
 
-impl<'a, E, QueryT, MutationT, CtxT, Sp> Wrapper<'a, E> for Execute<QueryT, MutationT, Sp>
+impl<'a, E, QueryT, MutationT, CtxT, Sp> Wrapper<'a, E> for WithSpawner<QueryT, MutationT, Sp>
 where
     E: Endpoint<'a, Output = (CtxT,)>,
     QueryT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
@@ -88,10 +88,10 @@ where
     Sp: Executor<Task> + 'a,
 {
     type Output = (GraphQLResponse,);
-    type Endpoint = ExecuteEndpoint<E, QueryT, MutationT, Sp>;
+    type Endpoint = WithSpawnerEndpoint<E, QueryT, MutationT, Sp>;
 
     fn wrap(self, endpoint: E) -> Self::Endpoint {
-        ExecuteEndpoint {
+        WithSpawnerEndpoint {
             context: endpoint,
             request: ::request::request(),
             root_node: Arc::new(self.root_node),
@@ -100,14 +100,14 @@ where
     }
 }
 
-pub struct ExecuteEndpoint<E, QueryT: GraphQLType, MutationT: GraphQLType, Sp> {
+pub struct WithSpawnerEndpoint<E, QueryT: GraphQLType, MutationT: GraphQLType, Sp> {
     context: E,
     request: RequestEndpoint,
     root_node: Arc<RootNode<'static, QueryT, MutationT>>,
     spawner: Sp,
 }
 
-impl<E, QueryT, MutationT, Sp> fmt::Debug for ExecuteEndpoint<E, QueryT, MutationT, Sp>
+impl<E, QueryT, MutationT, Sp> fmt::Debug for WithSpawnerEndpoint<E, QueryT, MutationT, Sp>
 where
     E: fmt::Debug,
     QueryT: GraphQLType,
@@ -124,7 +124,8 @@ where
     }
 }
 
-impl<'a, E, QueryT, MutationT, CtxT, Sp> Endpoint<'a> for ExecuteEndpoint<E, QueryT, MutationT, Sp>
+impl<'a, E, QueryT, MutationT, CtxT, Sp> Endpoint<'a>
+    for WithSpawnerEndpoint<E, QueryT, MutationT, Sp>
 where
     E: Endpoint<'a, Output = (CtxT,)>,
     QueryT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
@@ -135,12 +136,12 @@ where
     Sp: Executor<Task> + 'a,
 {
     type Output = (GraphQLResponse,);
-    type Future = ExecuteFuture<'a, E, QueryT, MutationT, CtxT, Sp>;
+    type Future = WithSpawnerFuture<'a, E, QueryT, MutationT, CtxT, Sp>;
 
     fn apply(&'a self, cx: &mut ApplyContext<'_>) -> ApplyResult<Self::Future> {
         let context = self.context.apply(cx)?;
         let request = self.request.apply(cx)?;
-        Ok(ExecuteFuture {
+        Ok(WithSpawnerFuture {
             context: MaybeDone::new(context),
             request: MaybeDone::new(request),
             execute: None,
@@ -150,7 +151,7 @@ where
 }
 
 #[derive(Debug)]
-pub struct ExecuteFuture<'a, E, QueryT, MutationT, CtxT, Sp>
+pub struct WithSpawnerFuture<'a, E, QueryT, MutationT, CtxT, Sp>
 where
     E: Endpoint<'a, Output = (CtxT,)>,
     QueryT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
@@ -163,11 +164,11 @@ where
     context: MaybeDone<E::Future>,
     request: MaybeDone<<RequestEndpoint as Endpoint<'a>>::Future>,
     execute: Option<JoinHandle<GraphQLResponse, ()>>,
-    endpoint: &'a ExecuteEndpoint<E, QueryT, MutationT, Sp>,
+    endpoint: &'a WithSpawnerEndpoint<E, QueryT, MutationT, Sp>,
 }
 
 impl<'a, E, QueryT, MutationT, CtxT, Sp> Future
-    for ExecuteFuture<'a, E, QueryT, MutationT, CtxT, Sp>
+    for WithSpawnerFuture<'a, E, QueryT, MutationT, CtxT, Sp>
 where
     E: Endpoint<'a, Output = (CtxT,)>,
     QueryT: GraphQLType<Context = CtxT> + Send + Sync + 'static,

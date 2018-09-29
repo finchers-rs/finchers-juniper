@@ -9,33 +9,33 @@ use juniper::{GraphQLType, RootNode};
 use std::fmt;
 use tokio_threadpool::blocking;
 
-use maybe_done::MaybeDone;
+use super::maybe_done::MaybeDone;
 use request::{GraphQLResponse, RequestEndpoint};
 
 /// Create a `Wrapper` for building a GraphQL endpoint using the specified `RootNode`.
 ///
 /// The endpoint created by this wrapper will block the current thread
 /// to execute the GraphQL query.
-pub fn execute<QueryT, MutationT, CtxT>(
+pub fn current_thread<QueryT, MutationT, CtxT>(
     root_node: RootNode<'static, QueryT, MutationT>,
-) -> Execute<QueryT, MutationT>
+) -> CurrentThread<QueryT, MutationT>
 where
     QueryT: GraphQLType<Context = CtxT>,
     MutationT: GraphQLType<Context = CtxT>,
 {
-    Execute {
+    CurrentThread {
         root_node,
         use_blocking: true,
     }
 }
 
 #[allow(missing_docs)]
-pub struct Execute<QueryT: GraphQLType, MutationT: GraphQLType> {
+pub struct CurrentThread<QueryT: GraphQLType, MutationT: GraphQLType> {
     root_node: RootNode<'static, QueryT, MutationT>,
     use_blocking: bool,
 }
 
-impl<QueryT, MutationT> Execute<QueryT, MutationT>
+impl<QueryT, MutationT> CurrentThread<QueryT, MutationT>
 where
     QueryT: GraphQLType,
     MutationT: GraphQLType,
@@ -44,14 +44,14 @@ where
     ///
     /// The default value is `true`.
     pub fn use_blocking(self, enabled: bool) -> Self {
-        Execute {
+        CurrentThread {
             use_blocking: enabled,
             ..self
         }
     }
 }
 
-impl<QueryT, MutationT> fmt::Debug for Execute<QueryT, MutationT>
+impl<QueryT, MutationT> fmt::Debug for CurrentThread<QueryT, MutationT>
 where
     QueryT: GraphQLType,
     MutationT: GraphQLType,
@@ -64,16 +64,16 @@ where
     }
 }
 
-impl<'a, QueryT, MutationT> IntoEndpoint<'a> for Execute<QueryT, MutationT>
+impl<'a, QueryT, MutationT> IntoEndpoint<'a> for CurrentThread<QueryT, MutationT>
 where
     QueryT: GraphQLType<Context = ()> + 'a,
     MutationT: GraphQLType<Context = ()> + 'a,
 {
     type Output = (GraphQLResponse,);
-    type Endpoint = ExecuteEndpoint<endpoint::Cloned<()>, QueryT, MutationT>;
+    type Endpoint = CurrentThreadEndpoint<endpoint::Cloned<()>, QueryT, MutationT>;
 
     fn into_endpoint(self) -> Self::Endpoint {
-        ExecuteEndpoint {
+        CurrentThreadEndpoint {
             context: endpoint::cloned(()),
             request: ::request::request(),
             root_node: self.root_node,
@@ -82,7 +82,7 @@ where
     }
 }
 
-impl<'a, E, QueryT, MutationT, CtxT> Wrapper<'a, E> for Execute<QueryT, MutationT>
+impl<'a, E, QueryT, MutationT, CtxT> Wrapper<'a, E> for CurrentThread<QueryT, MutationT>
 where
     E: Endpoint<'a, Output = (CtxT,)>,
     QueryT: GraphQLType<Context = CtxT> + 'a,
@@ -90,10 +90,10 @@ where
     CtxT: 'a,
 {
     type Output = (GraphQLResponse,);
-    type Endpoint = ExecuteEndpoint<E, QueryT, MutationT>;
+    type Endpoint = CurrentThreadEndpoint<E, QueryT, MutationT>;
 
     fn wrap(self, endpoint: E) -> Self::Endpoint {
-        ExecuteEndpoint {
+        CurrentThreadEndpoint {
             context: endpoint,
             request: ::request::request(),
             root_node: self.root_node,
@@ -102,14 +102,14 @@ where
     }
 }
 
-pub struct ExecuteEndpoint<E, QueryT: GraphQLType, MutationT: GraphQLType> {
+pub struct CurrentThreadEndpoint<E, QueryT: GraphQLType, MutationT: GraphQLType> {
     context: E,
     request: RequestEndpoint,
     root_node: RootNode<'static, QueryT, MutationT>,
     use_blocking: bool,
 }
 
-impl<E, QueryT, MutationT> fmt::Debug for ExecuteEndpoint<E, QueryT, MutationT>
+impl<E, QueryT, MutationT> fmt::Debug for CurrentThreadEndpoint<E, QueryT, MutationT>
 where
     E: fmt::Debug,
     QueryT: GraphQLType,
@@ -125,7 +125,7 @@ where
     }
 }
 
-impl<'a, E, QueryT, MutationT, CtxT> Endpoint<'a> for ExecuteEndpoint<E, QueryT, MutationT>
+impl<'a, E, QueryT, MutationT, CtxT> Endpoint<'a> for CurrentThreadEndpoint<E, QueryT, MutationT>
 where
     E: Endpoint<'a, Output = (CtxT,)>,
     QueryT: GraphQLType<Context = CtxT> + 'a,
@@ -133,12 +133,12 @@ where
     CtxT: 'a,
 {
     type Output = (GraphQLResponse,);
-    type Future = ExecuteFuture<'a, E, QueryT, MutationT, CtxT>;
+    type Future = CurrentThreadFuture<'a, E, QueryT, MutationT, CtxT>;
 
     fn apply(&'a self, cx: &mut ApplyContext<'_>) -> ApplyResult<Self::Future> {
         let context = self.context.apply(cx)?;
         let request = self.request.apply(cx)?;
-        Ok(ExecuteFuture {
+        Ok(CurrentThreadFuture {
             context: MaybeDone::new(context),
             request: MaybeDone::new(request),
             endpoint: self,
@@ -147,7 +147,7 @@ where
 }
 
 #[derive(Debug)]
-pub struct ExecuteFuture<'a, E, QueryT, MutationT, CtxT>
+pub struct CurrentThreadFuture<'a, E, QueryT, MutationT, CtxT>
 where
     E: Endpoint<'a, Output = (CtxT,)>,
     QueryT: GraphQLType<Context = CtxT> + 'a,
@@ -156,10 +156,10 @@ where
 {
     context: MaybeDone<E::Future>,
     request: MaybeDone<<RequestEndpoint as Endpoint<'a>>::Future>,
-    endpoint: &'a ExecuteEndpoint<E, QueryT, MutationT>,
+    endpoint: &'a CurrentThreadEndpoint<E, QueryT, MutationT>,
 }
 
-impl<'a, E, QueryT, MutationT, CtxT> ExecuteFuture<'a, E, QueryT, MutationT, CtxT>
+impl<'a, E, QueryT, MutationT, CtxT> CurrentThreadFuture<'a, E, QueryT, MutationT, CtxT>
 where
     E: Endpoint<'a, Output = (CtxT,)>,
     QueryT: GraphQLType<Context = CtxT>,
@@ -179,7 +179,7 @@ where
     }
 }
 
-impl<'a, E, QueryT, MutationT, CtxT> Future for ExecuteFuture<'a, E, QueryT, MutationT, CtxT>
+impl<'a, E, QueryT, MutationT, CtxT> Future for CurrentThreadFuture<'a, E, QueryT, MutationT, CtxT>
 where
     E: Endpoint<'a, Output = (CtxT,)>,
     QueryT: GraphQLType<Context = CtxT>,

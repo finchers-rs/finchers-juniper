@@ -13,16 +13,16 @@ use std::fmt;
 use std::sync::Arc;
 use tokio_threadpool::{blocking, BlockingError};
 
-use maybe_done::MaybeDone;
+use super::maybe_done::MaybeDone;
 use request::{GraphQLResponse, RequestEndpoint};
 
 /// Create a `Wrapper` for building a GraphQL endpoint using the specified `RootNode`.
 ///
 /// The endpoint created by this wrapper will spawn a task which executes the GraphQL query
 /// after receiving the request, by using tokio's `DefaultExecutor`.
-pub fn execute<QueryT, MutationT, CtxT>(
+pub fn nonblocking<QueryT, MutationT, CtxT>(
     root_node: RootNode<'static, QueryT, MutationT>,
-) -> Execute<QueryT, MutationT>
+) -> Nonblocking<QueryT, MutationT>
 where
     QueryT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
     QueryT::TypeInfo: Send + Sync + 'static,
@@ -30,29 +30,29 @@ where
     MutationT::TypeInfo: Send + Sync + 'static,
     CtxT: Send + 'static,
 {
-    Execute {
+    Nonblocking {
         root_node,
         use_blocking: true,
     }
 }
 
 #[allow(missing_docs)]
-pub struct Execute<QueryT: GraphQLType, MutationT: GraphQLType> {
+pub struct Nonblocking<QueryT: GraphQLType, MutationT: GraphQLType> {
     root_node: RootNode<'static, QueryT, MutationT>,
     use_blocking: bool,
 }
 
-impl<QueryT, MutationT> fmt::Debug for Execute<QueryT, MutationT>
+impl<QueryT, MutationT> fmt::Debug for Nonblocking<QueryT, MutationT>
 where
     QueryT: GraphQLType,
     MutationT: GraphQLType,
 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.debug_struct("Execute").finish()
+        formatter.debug_struct("Nonblocking").finish()
     }
 }
 
-impl<QueryT, MutationT> Execute<QueryT, MutationT>
+impl<QueryT, MutationT> Nonblocking<QueryT, MutationT>
 where
     QueryT: GraphQLType,
     MutationT: GraphQLType,
@@ -61,14 +61,14 @@ where
     ///
     /// The default value is `true`.
     pub fn use_blocking(self, enabled: bool) -> Self {
-        Execute {
+        Nonblocking {
             use_blocking: enabled,
             ..self
         }
     }
 }
 
-impl<'a, QueryT, MutationT> IntoEndpoint<'a> for Execute<QueryT, MutationT>
+impl<'a, QueryT, MutationT> IntoEndpoint<'a> for Nonblocking<QueryT, MutationT>
 where
     QueryT: GraphQLType<Context = ()> + Send + Sync + 'static,
     QueryT::TypeInfo: Send + Sync + 'static,
@@ -76,10 +76,10 @@ where
     MutationT::TypeInfo: Send + Sync + 'static,
 {
     type Output = (GraphQLResponse,);
-    type Endpoint = ExecuteEndpoint<endpoint::Cloned<()>, QueryT, MutationT>;
+    type Endpoint = NonblockingEndpoint<endpoint::Cloned<()>, QueryT, MutationT>;
 
     fn into_endpoint(self) -> Self::Endpoint {
-        ExecuteEndpoint {
+        NonblockingEndpoint {
             context: endpoint::cloned(()),
             request: ::request::request(),
             root_node: Arc::new(self.root_node),
@@ -88,7 +88,7 @@ where
     }
 }
 
-impl<'a, E, QueryT, MutationT, CtxT> Wrapper<'a, E> for Execute<QueryT, MutationT>
+impl<'a, E, QueryT, MutationT, CtxT> Wrapper<'a, E> for Nonblocking<QueryT, MutationT>
 where
     E: Endpoint<'a, Output = (CtxT,)>,
     QueryT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
@@ -98,10 +98,10 @@ where
     CtxT: Send + 'static,
 {
     type Output = (GraphQLResponse,);
-    type Endpoint = ExecuteEndpoint<E, QueryT, MutationT>;
+    type Endpoint = NonblockingEndpoint<E, QueryT, MutationT>;
 
     fn wrap(self, endpoint: E) -> Self::Endpoint {
-        ExecuteEndpoint {
+        NonblockingEndpoint {
             context: endpoint,
             request: ::request::request(),
             root_node: Arc::new(self.root_node),
@@ -110,14 +110,14 @@ where
     }
 }
 
-pub struct ExecuteEndpoint<E, QueryT: GraphQLType, MutationT: GraphQLType> {
+pub struct NonblockingEndpoint<E, QueryT: GraphQLType, MutationT: GraphQLType> {
     context: E,
     request: RequestEndpoint,
     root_node: Arc<RootNode<'static, QueryT, MutationT>>,
     use_blocking: bool,
 }
 
-impl<E, QueryT, MutationT> fmt::Debug for ExecuteEndpoint<E, QueryT, MutationT>
+impl<E, QueryT, MutationT> fmt::Debug for NonblockingEndpoint<E, QueryT, MutationT>
 where
     E: fmt::Debug,
     QueryT: GraphQLType,
@@ -133,7 +133,7 @@ where
     }
 }
 
-impl<'a, E, QueryT, MutationT, CtxT> Endpoint<'a> for ExecuteEndpoint<E, QueryT, MutationT>
+impl<'a, E, QueryT, MutationT, CtxT> Endpoint<'a> for NonblockingEndpoint<E, QueryT, MutationT>
 where
     E: Endpoint<'a, Output = (CtxT,)>,
     QueryT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
@@ -143,12 +143,12 @@ where
     CtxT: Send + 'static,
 {
     type Output = (GraphQLResponse,);
-    type Future = ExecuteFuture<'a, E, QueryT, MutationT, CtxT>;
+    type Future = NonblockingFuture<'a, E, QueryT, MutationT, CtxT>;
 
     fn apply(&'a self, cx: &mut ApplyContext<'_>) -> ApplyResult<Self::Future> {
         let context = self.context.apply(cx)?;
         let request = self.request.apply(cx)?;
-        Ok(ExecuteFuture {
+        Ok(NonblockingFuture {
             context: MaybeDone::new(context),
             request: MaybeDone::new(request),
             execute: None,
@@ -158,7 +158,7 @@ where
 }
 
 #[derive(Debug)]
-pub struct ExecuteFuture<'a, E, QueryT, MutationT, CtxT>
+pub struct NonblockingFuture<'a, E, QueryT, MutationT, CtxT>
 where
     E: Endpoint<'a, Output = (CtxT,)>,
     QueryT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
@@ -170,10 +170,10 @@ where
     context: MaybeDone<E::Future>,
     request: MaybeDone<<RequestEndpoint as Endpoint<'a>>::Future>,
     execute: Option<JoinHandle<GraphQLResponse, BlockingError>>,
-    endpoint: &'a ExecuteEndpoint<E, QueryT, MutationT>,
+    endpoint: &'a NonblockingEndpoint<E, QueryT, MutationT>,
 }
 
-impl<'a, E, QueryT, MutationT, CtxT> Future for ExecuteFuture<'a, E, QueryT, MutationT, CtxT>
+impl<'a, E, QueryT, MutationT, CtxT> Future for NonblockingFuture<'a, E, QueryT, MutationT, CtxT>
 where
     E: Endpoint<'a, Output = (CtxT,)>,
     QueryT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
