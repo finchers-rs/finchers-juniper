@@ -7,7 +7,7 @@ extern crate percent_encoding;
 use finchers::endpoint::syntax;
 use finchers::local;
 use finchers::prelude::*;
-use finchers_juniper::{GraphQLRequest, GraphQLResponse};
+use finchers_juniper::request::{GraphQLRequest, GraphQLResponse};
 
 use juniper::http::tests as http_tests;
 use juniper::tests::model::Database;
@@ -73,7 +73,7 @@ fn test_finchers_integration() {
     let database = Database::new();
     let schema = Schema::new(Database::new(), EmptyMutation::<Database>::new());
     let endpoint = syntax::eos()
-        .and(finchers_juniper::request())
+        .and(finchers_juniper::graphql_request())
         .and(endpoint::by_ref(database))
         .and(endpoint::by_ref(schema))
         .and_then(

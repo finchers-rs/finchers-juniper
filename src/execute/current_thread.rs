@@ -9,7 +9,7 @@ use futures::{Future, Poll};
 use juniper::{GraphQLType, RootNode};
 use std::fmt;
 
-use request::{GraphQLResponse, RequestEndpoint, RequestFuture};
+use request::{GraphQLRequestEndpoint, GraphQLResponse, RequestFuture};
 
 /// Create a `Wrapper` for building a GraphQL endpoint using the specified `RootNode`.
 ///
@@ -50,7 +50,7 @@ where
     fn into_endpoint(self) -> Self::Endpoint {
         CurrentThreadEndpoint {
             context: endpoint::cloned(()),
-            request: ::request::request(),
+            request: ::request::graphql_request(),
             root_node: self.root_node,
         }
     }
@@ -69,7 +69,7 @@ where
     fn wrap(self, endpoint: E) -> Self::Endpoint {
         CurrentThreadEndpoint {
             context: endpoint,
-            request: ::request::request(),
+            request: ::request::graphql_request(),
             root_node: self.root_node,
         }
     }
@@ -77,7 +77,7 @@ where
 
 pub struct CurrentThreadEndpoint<E, QueryT: GraphQLType, MutationT: GraphQLType> {
     context: E,
-    request: RequestEndpoint,
+    request: GraphQLRequestEndpoint,
     root_node: RootNode<'static, QueryT, MutationT>,
 }
 

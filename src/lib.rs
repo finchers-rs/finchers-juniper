@@ -35,8 +35,8 @@ extern crate tokio;
 extern crate tokio_threadpool;
 
 pub mod execute;
-mod graphiql;
-mod request;
+pub mod graphiql;
+pub mod request;
 
-pub use graphiql::{graphiql, GraphiQL};
-pub use request::{request, GraphQLRequest, GraphQLResponse, RequestEndpoint};
+pub use graphiql::graphiql_source;
+pub use request::graphql_request;

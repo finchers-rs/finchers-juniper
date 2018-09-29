@@ -12,7 +12,7 @@ use juniper::{GraphQLType, RootNode};
 use std::fmt;
 use std::sync::Arc;
 
-use request::{GraphQLResponse, RequestEndpoint, RequestFuture};
+use request::{GraphQLRequestEndpoint, GraphQLResponse, RequestFuture};
 
 type Task = Box<dyn Future<Item = (), Error = ()> + Send + 'static>;
 
@@ -69,7 +69,7 @@ where
     fn into_endpoint(self) -> Self::Endpoint {
         WithSpawnerEndpoint {
             context: endpoint::cloned(()),
-            request: ::request::request(),
+            request: ::request::graphql_request(),
             root_node: Arc::new(self.root_node),
             spawner: self.spawner,
         }
@@ -92,7 +92,7 @@ where
     fn wrap(self, endpoint: E) -> Self::Endpoint {
         WithSpawnerEndpoint {
             context: endpoint,
-            request: ::request::request(),
+            request: ::request::graphql_request(),
             root_node: Arc::new(self.root_node),
             spawner: self.spawner,
         }
@@ -101,7 +101,7 @@ where
 
 pub struct WithSpawnerEndpoint<E, QueryT: GraphQLType, MutationT: GraphQLType, Sp> {
     context: E,
-    request: RequestEndpoint,
+    request: GraphQLRequestEndpoint,
     root_node: Arc<RootNode<'static, QueryT, MutationT>>,
     spawner: Sp,
 }

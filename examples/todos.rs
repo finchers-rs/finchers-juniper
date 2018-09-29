@@ -27,7 +27,7 @@ fn main() -> Fallible<()> {
         .and(context_endpoint)
         .wrap(finchers_juniper::execute::nonblocking(create_schema()));
 
-    let graphiql_endpoint = path!(@get /).and(finchers_juniper::graphiql("/graphql"));
+    let graphiql_endpoint = path!(@get /).and(finchers_juniper::graphiql_source("/graphql"));
 
     let endpoint = graphql_endpoint.or(graphiql_endpoint);
 

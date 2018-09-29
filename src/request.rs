@@ -1,3 +1,5 @@
+//! Endpoint for parsing GraphQL request.
+
 use finchers::endpoint::with_get_cx;
 use finchers::endpoint::{ApplyContext, ApplyResult, Endpoint};
 use finchers::endpoints::body;
@@ -30,17 +32,17 @@ use serde_qs;
 ///   - When `content-type` is `application/json`, the body is parsed as a JSON object which
 ///     contains a GraphQL query and supplemental fields if needed.
 ///   - When `content-type` is `application/graphql`, the body is parsed as a single GraphQL query.
-pub fn request() -> RequestEndpoint {
-    RequestEndpoint { _priv: () }
+pub fn graphql_request() -> GraphQLRequestEndpoint {
+    GraphQLRequestEndpoint { _priv: () }
 }
 
 #[allow(missing_docs)]
 #[derive(Debug)]
-pub struct RequestEndpoint {
+pub struct GraphQLRequestEndpoint {
     _priv: (),
 }
 
-impl<'a> Endpoint<'a> for RequestEndpoint {
+impl<'a> Endpoint<'a> for GraphQLRequestEndpoint {
     type Output = (GraphQLRequest,);
     type Future = RequestFuture<'a>;
 
@@ -57,6 +59,7 @@ impl<'a> Endpoint<'a> for RequestEndpoint {
     }
 }
 
+#[doc(hidden)]
 #[derive(Debug)]
 pub struct RequestFuture<'a> {
     kind: RequestKind<'a>,

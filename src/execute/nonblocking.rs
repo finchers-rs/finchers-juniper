@@ -13,7 +13,7 @@ use std::fmt;
 use std::sync::Arc;
 use tokio_threadpool::{blocking, BlockingError};
 
-use request::{GraphQLResponse, RequestEndpoint, RequestFuture};
+use request::{GraphQLRequestEndpoint, GraphQLResponse, RequestFuture};
 
 /// Create a `Wrapper` for building a GraphQL endpoint using the specified `RootNode`.
 ///
@@ -60,7 +60,7 @@ where
     fn into_endpoint(self) -> Self::Endpoint {
         NonblockingEndpoint {
             context: endpoint::cloned(()),
-            request: ::request::request(),
+            request: ::request::graphql_request(),
             root_node: Arc::new(self.root_node),
         }
     }
@@ -81,7 +81,7 @@ where
     fn wrap(self, endpoint: E) -> Self::Endpoint {
         NonblockingEndpoint {
             context: endpoint,
-            request: ::request::request(),
+            request: ::request::graphql_request(),
             root_node: Arc::new(self.root_node),
         }
     }
@@ -89,7 +89,7 @@ where
 
 pub struct NonblockingEndpoint<E, QueryT: GraphQLType, MutationT: GraphQLType> {
     context: E,
-    request: RequestEndpoint,
+    request: GraphQLRequestEndpoint,
     root_node: Arc<RootNode<'static, QueryT, MutationT>>,
 }
 
