@@ -16,10 +16,11 @@ use tokio_threadpool::{blocking, BlockingError};
 
 use request::{GraphQLRequestEndpoint, GraphQLResponse, RequestFuture};
 
-/// Create a `Wrapper` for building a GraphQL endpoint using the specified `RootNode`.
+/// Create a GraphQL executor from the specified `RootNode`.
 ///
-/// The endpoint created by this wrapper will spawn a task which executes the GraphQL query
-/// after receiving the request, by using tokio's `DefaultExecutor`.
+/// The endpoint created by this wrapper will spawn a task which executes the GraphQL queries
+/// after receiving the request, by using tokio's `DefaultExecutor`, and notify the start of
+/// the blocking section by using tokio_threadpool's blocking API.
 pub fn nonblocking<QueryT, MutationT, CtxT>(
     root_node: RootNode<'static, QueryT, MutationT>,
 ) -> Nonblocking<QueryT, MutationT>

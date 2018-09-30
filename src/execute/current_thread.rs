@@ -11,9 +11,10 @@ use std::fmt;
 
 use request::{GraphQLRequestEndpoint, GraphQLResponse, RequestFuture};
 
-/// Create a `Wrapper` for building a GraphQL endpoint using the specified `RootNode`.
+/// Create a GraphQL executor from the specified `RootNode`.
 ///
-/// The endpoint created by this wrapper will execute the GraphQL query on the current thread.
+/// The endpoint created by this executor will execute the GraphQL queries
+/// on the current thread.
 pub fn current_thread<QueryT, MutationT, CtxT>(
     root_node: RootNode<'static, QueryT, MutationT>,
 ) -> CurrentThread<QueryT, MutationT>

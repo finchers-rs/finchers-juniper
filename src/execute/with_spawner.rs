@@ -14,9 +14,9 @@ use std::sync::Arc;
 
 use request::{GraphQLRequest, GraphQLRequestEndpoint, GraphQLResponse, RequestFuture};
 
-/// Create a `Wrapper` for building a GraphQL endpoint using the specified `RootNode`.
+/// Create a GraphQL executor from the specified `RootNode` and task executor.
 ///
-/// The endpoint created by this wrapper will spawn a task which executes the GraphQL query
+/// The endpoint created by this wrapper will spawn a task which executes the GraphQL queries
 /// after receiving the request, by using the specified `Executor<T>`.
 pub fn with_spawner<QueryT, MutationT, CtxT, Sp>(
     root_node: RootNode<'static, QueryT, MutationT>,
