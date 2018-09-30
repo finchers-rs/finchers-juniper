@@ -4,9 +4,10 @@ use finchers::endpoint::{ApplyContext, ApplyResult, Endpoint, IntoEndpoint};
 use finchers::error::Error;
 
 use futures::future;
+use futures::future::poll_fn;
 use futures::sync::oneshot;
-use futures::{Async, Future, Poll};
-use tokio::executor::{DefaultExecutor, Executor as _TokioExecutor};
+use futures::{Future, Poll};
+use tokio::executor::DefaultExecutor;
 
 use juniper::{GraphQLType, RootNode};
 use std::fmt;
@@ -142,7 +143,7 @@ where
     CtxT: 'a,
 {
     inner: future::Join<E::Future, RequestFuture<'a>>,
-    handle: Option<JoinHandle<GraphQLResponse, BlockingError>>,
+    handle: Option<oneshot::SpawnHandle<GraphQLResponse, BlockingError>>,
     endpoint: &'a NonblockingEndpoint<E, QueryT, MutationT>,
 }
 
@@ -169,57 +170,14 @@ where
                 }
                 None => {
                     let ((context,), (request,)) = try_ready!(self.inner.poll());
+
+                    trace!("spawn a GraphQL task using the default executor");
                     let root_node = self.endpoint.root_node.clone();
-                    trace!("spawn a GraphQL task (with Tokio's blocking API)");
                     let future =
-                        future::poll_fn(move || blocking(|| request.execute(&root_node, &context)));
-                    let handle = spawn_with_handle(future);
-                    self.handle = Some(handle);
+                        poll_fn(move || blocking(|| request.execute(&root_node, &context)));
+                    self.handle = Some(oneshot::spawn(future, &mut DefaultExecutor::current()));
                 }
             }
-        }
-    }
-}
-
-fn spawn_with_handle<F>(future: F) -> JoinHandle<F::Item, F::Error>
-where
-    F: Future + Send + 'static,
-    F::Item: Send + 'static,
-    F::Error: Send + 'static,
-{
-    let (tx, rx) = oneshot::channel();
-    let mut tx_opt = Some(tx);
-    let mut future = ::std::panic::AssertUnwindSafe(future).catch_unwind();
-    let future = future::poll_fn(move || {
-        let data = match future.poll() {
-            Ok(Async::NotReady) => return Ok(Async::NotReady),
-            Ok(Async::Ready(res)) => Ok(res),
-            Err(panic_err) => Err(panic_err),
-        };
-        let _ = tx_opt.take().unwrap().send(data);
-        Ok(Async::Ready(()))
-    });
-    DefaultExecutor::current()
-        .spawn(Box::new(future))
-        .expect("failed to spawn the future");
-    JoinHandle { inner: rx }
-}
-
-#[derive(Debug)]
-struct JoinHandle<T, E> {
-    inner: oneshot::Receiver<::std::thread::Result<Result<T, E>>>,
-}
-
-impl<T, E> Future for JoinHandle<T, E> {
-    type Item = T;
-    type Error = E;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match self.inner.poll() {
-            Ok(Async::NotReady) => Ok(Async::NotReady),
-            Ok(Async::Ready(Ok(res))) => res.map(Async::Ready),
-            Ok(Async::Ready(Err(panic_err))) => ::std::panic::resume_unwind(panic_err),
-            Err(canceled) => ::std::panic::resume_unwind(Box::new(canceled)),
         }
     }
 }

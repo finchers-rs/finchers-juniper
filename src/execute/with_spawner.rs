@@ -6,15 +6,13 @@ use finchers::error::Error;
 use futures::future;
 use futures::future::Executor;
 use futures::sync::oneshot;
-use futures::{Async, Future, Poll};
+use futures::{Future, Poll};
 
 use juniper::{GraphQLType, RootNode};
 use std::fmt;
 use std::sync::Arc;
 
-use request::{GraphQLRequestEndpoint, GraphQLResponse, RequestFuture};
-
-type Task = Box<dyn Future<Item = (), Error = ()> + Send + 'static>;
+use request::{GraphQLRequest, GraphQLRequestEndpoint, GraphQLResponse, RequestFuture};
 
 /// Create a `Wrapper` for building a GraphQL endpoint using the specified `RootNode`.
 ///
@@ -30,7 +28,7 @@ where
     MutationT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
     MutationT::TypeInfo: Send + Sync + 'static,
     CtxT: Send + 'static,
-    Sp: Executor<Task>,
+    Sp: Executor<oneshot::Execute<GraphQLTask<QueryT, MutationT, CtxT>>>,
 {
     WithSpawner { root_node, spawner }
 }
@@ -61,7 +59,7 @@ where
     QueryT::TypeInfo: Send + Sync + 'static,
     MutationT: GraphQLType<Context = ()> + Send + Sync + 'static,
     MutationT::TypeInfo: Send + Sync + 'static,
-    Sp: Executor<Task> + 'a,
+    Sp: Executor<oneshot::Execute<GraphQLTask<QueryT, MutationT, ()>>> + 'a,
 {
     type Output = (GraphQLResponse,);
     type Endpoint = WithSpawnerEndpoint<endpoint::Cloned<()>, QueryT, MutationT, Sp>;
@@ -84,7 +82,7 @@ where
     MutationT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
     MutationT::TypeInfo: Send + Sync + 'static,
     CtxT: Send + 'static,
-    Sp: Executor<Task> + 'a,
+    Sp: Executor<oneshot::Execute<GraphQLTask<QueryT, MutationT, CtxT>>> + 'a,
 {
     type Output = (GraphQLResponse,);
     type Endpoint = WithSpawnerEndpoint<E, QueryT, MutationT, Sp>;
@@ -132,7 +130,7 @@ where
     MutationT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
     MutationT::TypeInfo: Send + Sync + 'static,
     CtxT: Send + 'static,
-    Sp: Executor<Task> + 'a,
+    Sp: Executor<oneshot::Execute<GraphQLTask<QueryT, MutationT, CtxT>>> + 'a,
 {
     type Output = (GraphQLResponse,);
     type Future = WithSpawnerFuture<'a, E, QueryT, MutationT, CtxT, Sp>;
@@ -160,7 +158,7 @@ where
     Sp: 'a,
 {
     inner: future::Join<E::Future, RequestFuture<'a>>,
-    handle: Option<JoinHandle<GraphQLResponse, ()>>,
+    handle: Option<oneshot::SpawnHandle<GraphQLResponse, ()>>,
     endpoint: &'a WithSpawnerEndpoint<E, QueryT, MutationT, Sp>,
 }
 
@@ -173,7 +171,7 @@ where
     MutationT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
     MutationT::TypeInfo: Send + Sync + 'static,
     CtxT: Send + 'static,
-    Sp: Executor<Task> + 'a,
+    Sp: Executor<oneshot::Execute<GraphQLTask<QueryT, MutationT, CtxT>>> + 'a,
 {
     type Item = (GraphQLResponse,);
     type Error = Error;
@@ -188,12 +186,16 @@ where
                         .map_err(|_| unreachable!());
                 }
                 None => {
-                    trace!("spawn a GraphQL task");
                     let ((context,), (request,)) = try_ready!(self.inner.poll());
+
+                    trace!("spawn a GraphQL task with the specified task executor");
                     let root_node = self.endpoint.root_node.clone();
-                    let future =
-                        future::poll_fn(move || Ok(request.execute(&root_node, &context).into()));
-                    let handle = spawn_with_handle(future, &self.endpoint.spawner);
+                    let future = GraphQLTask {
+                        request,
+                        root_node,
+                        context,
+                    };
+                    let handle = oneshot::spawn(future, &self.endpoint.spawner);
                     self.handle = Some(handle);
                 }
             }
@@ -201,46 +203,28 @@ where
     }
 }
 
-fn spawn_with_handle<F, Sp>(future: F, spawner: &Sp) -> JoinHandle<F::Item, F::Error>
+// not a public API.
+#[allow(missing_debug_implementations)]
+pub struct GraphQLTask<QueryT, MutationT, CtxT>
 where
-    F: Future + Send + 'static,
-    F::Item: Send + 'static,
-    F::Error: Send + 'static,
-    Sp: Executor<Task>,
+    QueryT: GraphQLType<Context = CtxT>,
+    MutationT: GraphQLType<Context = CtxT>,
 {
-    let (tx, rx) = oneshot::channel();
-    let mut tx_opt = Some(tx);
-    let mut future = ::std::panic::AssertUnwindSafe(future).catch_unwind();
-    let future = future::poll_fn(move || {
-        let data = match future.poll() {
-            Ok(Async::NotReady) => return Ok(Async::NotReady),
-            Ok(Async::Ready(res)) => Ok(res),
-            Err(panic_err) => Err(panic_err),
-        };
-        let _ = tx_opt.take().unwrap().send(data);
-        Ok(Async::Ready(()))
-    });
-    spawner
-        .execute(Box::new(future))
-        .expect("failed to spawn the future");
-    JoinHandle { inner: rx }
+    request: GraphQLRequest,
+    root_node: Arc<RootNode<'static, QueryT, MutationT>>,
+    context: CtxT,
 }
 
-#[derive(Debug)]
-struct JoinHandle<T, E> {
-    inner: oneshot::Receiver<::std::thread::Result<Result<T, E>>>,
-}
+impl<QueryT, MutationT, CtxT> Future for GraphQLTask<QueryT, MutationT, CtxT>
+where
+    QueryT: GraphQLType<Context = CtxT>,
+    MutationT: GraphQLType<Context = CtxT>,
+{
+    type Item = GraphQLResponse;
+    type Error = ();
 
-impl<T, E> Future for JoinHandle<T, E> {
-    type Item = T;
-    type Error = E;
-
+    #[inline]
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
-        match self.inner.poll() {
-            Ok(Async::NotReady) => Ok(Async::NotReady),
-            Ok(Async::Ready(Ok(res))) => res.map(Async::Ready),
-            Ok(Async::Ready(Err(panic_err))) => ::std::panic::resume_unwind(panic_err),
-            Err(canceled) => ::std::panic::resume_unwind(Box::new(canceled)),
-        }
+        Ok(self.request.execute(&self.root_node, &self.context).into())
     }
 }
