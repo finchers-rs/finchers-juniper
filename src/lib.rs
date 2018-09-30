@@ -1,6 +1,6 @@
 #![cfg_attr(feature = "extern-prelude", feature(extern_prelude))]
 
-//! Endpoints for supporting Juniper integration.
+//! A set of extensions for supporting Juniper integration.
 
 // master
 #![doc(html_root_url = "https://finchers-rs.github.io/finchers-juniper")]

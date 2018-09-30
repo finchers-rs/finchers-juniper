@@ -3,7 +3,7 @@ name = "finchers-juniper"
 version = "0.1.0-alpha.3" # remember to update html_root_url
 authors = ["Yusuke Sasaki <yusuke.sasaki.nuem@gmail.com>"]
 description = """
-Endpoints for supporting Juniper integration
+A set of extensions for supporting Juniper integration.
 """
 license = "MIT OR Apache-2.0"
 readme = "README.md"
