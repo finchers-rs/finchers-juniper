@@ -25,7 +25,7 @@ matrix:
         - cargo update
         - cargo test
         - cargo fmt -- --check
-        - if [[ "${TRAVIS_PULL_REQUEST_BRANCH:-}" = release-* ]]; then cargo package; fi
+        - if [[ "${TRAVIS_PULL_REQUEST_BRANCH:-}" = release-* ]]; then cargo publish --dry-run; fi
 
     - rust: beta
       before_script:
