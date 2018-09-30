@@ -3,9 +3,9 @@
 //! A set of extensions for supporting Juniper integration.
 
 // master
-#![doc(html_root_url = "https://finchers-rs.github.io/finchers-juniper")]
+//#![doc(html_root_url = "https://finchers-rs.github.io/finchers-juniper")]
 // released
-//#![doc(html_root_url = "https://finchers-rs.github.io/docs/finchers-juniper/v0.1.0-alpha.3")]
+#![doc(html_root_url = "https://finchers-rs.github.io/docs/finchers-juniper/v0.1.0")]
 #![warn(
     missing_docs,
     missing_debug_implementations,

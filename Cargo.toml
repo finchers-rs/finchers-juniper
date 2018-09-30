@@ -1,6 +1,6 @@
 [package]
 name = "finchers-juniper"
-version = "0.1.0-alpha.3" # remember to update html_root_url
+version = "0.1.0" # remember to update html_root_url
 authors = ["Yusuke Sasaki <yusuke.sasaki.nuem@gmail.com>"]
 description = """
 A set of extensions for supporting Juniper integration.
@@ -23,7 +23,7 @@ strict = []
 extern-prelude = []
 
 [dependencies]
-finchers = "0.12.0-alpha.7"
+finchers = "0.12.0"
 
 bytes = "0.4.9"
 failure = { version = "0.1.2", features = ["derive"] }
@@ -45,3 +45,4 @@ futures-cpupool = "0.1.8"
 
 [patch.crates-io.finchers]
 git = "https://github.com/finchers-rs/finchers.git"
+tag = "v0.12.0"
