@@ -2,6 +2,53 @@
 #![cfg_attr(finchers_inject_extern_prelude, feature(extern_prelude))]
 
 //! A set of extensions for supporting Juniper integration.
+//!
+//! # Examples
+//!
+//! ```
+//! #[macro_use]
+//! extern crate finchers;
+//! # use finchers::prelude::*;
+//! extern crate finchers_juniper;
+//! #[macro_use]
+//! extern crate juniper;
+//!
+//! use juniper::{EmptyMutation, RootNode};
+//!
+//! // The contextual information used when GraphQL query executes.
+//! //
+//! // Typically it contains a connection retrieved from pool
+//! // or credential information extracted from HTTP headers.
+//! struct MyContext {
+//!     // ...
+//! }
+//! impl juniper::Context for MyContext {}
+//!
+//! struct Query {}
+//! graphql_object!(Query: MyContext |&self| {
+//!     field apiVersion() -> &str { "1.0" }
+//!     // ...
+//! });
+//!
+//! # fn main() {
+//! let schema = RootNode::new(
+//!     Query {},
+//!     EmptyMutation::<MyContext>::new(),
+//! );
+//!
+//! // An endpoint which acquires a GraphQL context from request.
+//! let fetch_graphql_context =
+//!     endpoint::unit().map(|| MyContext { /* ... */ });
+//!
+//! // Build an endpoint which handles GraphQL requests.
+//! let endpoint = path!(@get / "graphql" /)
+//!     .and(fetch_graphql_context)
+//!     .wrap(finchers_juniper::execute::nonblocking(schema));
+//! # drop(move || {
+//! # finchers::launch(endpoint).start("127.0.0.1:4000");
+//! # });
+//! # }
+//! ```
 
 #![doc(html_root_url = "https://docs.rs/finchers-juniper/0.1.0")]
 #![warn(
