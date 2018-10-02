@@ -50,7 +50,7 @@
 //! # }
 //! ```
 
-#![doc(html_root_url = "https://docs.rs/finchers-juniper/0.1.0")]
+#![doc(html_root_url = "https://docs.rs/finchers-juniper/0.1.1")]
 #![warn(
     missing_docs,
     missing_debug_implementations,

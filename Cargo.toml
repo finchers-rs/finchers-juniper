@@ -1,6 +1,6 @@
 [package]
 name = "finchers-juniper"
-version = "0.1.0" # remember to update html_root_url
+version = "0.1.1" # remember to update html_root_url
 authors = ["Yusuke Sasaki <yusuke.sasaki.nuem@gmail.com>"]
 description = """
 A set of extensions for supporting Juniper integration.
