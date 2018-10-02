@@ -8,22 +8,25 @@ A set of extensions for supporting Juniper integration.
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/finchers-rs/finchers-juniper.git"
-documentation = "https://finchers-rs.github.io/docs"
 
-[package.metadata.docs.rs]
-features = [
-  # FIXME: remove it as soon as the rustc version used in docs.rs is updated
-  "extern-prelude",
+include = [
+  "Cargo.toml",
+  "build.rs",
+  "src/**/*",
+  "tests/**/*",
+  "examples/**/*",
+  "benches/**/*",
+  "LICENSE-MIT",
+  "LICENSE-APACHE",
+  "README.md"
 ]
 
-[features]
-strict = []
-
+[package.metadata.docs.rs]
 # FIXME: remove it as soon as the rustc version used in docs.rs is updated
-extern-prelude = []
+rustdoc-args = ["--cfg", "finchers_inject_extern_prelude"]
 
 [dependencies]
-finchers = "0.12.0"
+finchers = "0.12"
 
 bytes = "0.4.9"
 failure = { version = "0.1.2", features = ["derive"] }

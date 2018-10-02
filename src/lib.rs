@@ -1,11 +1,9 @@
-#![cfg_attr(feature = "extern-prelude", feature(extern_prelude))]
+// FIXME: remove this feature gate as soon as the rustc version used in docs.rs is updated
+#![cfg_attr(finchers_inject_extern_prelude, feature(extern_prelude))]
 
 //! A set of extensions for supporting Juniper integration.
 
-// master
-//#![doc(html_root_url = "https://finchers-rs.github.io/finchers-juniper")]
-// released
-#![doc(html_root_url = "https://finchers-rs.github.io/docs/finchers-juniper/v0.1.0")]
+#![doc(html_root_url = "https://docs.rs/finchers-juniper/0.1.0")]
 #![warn(
     missing_docs,
     missing_debug_implementations,
@@ -14,8 +12,8 @@
     unused,
 )]
 // #![warn(rust_2018_compatibility)]
-#![cfg_attr(feature = "strict", deny(warnings))]
-#![cfg_attr(feature = "strict", doc(test(attr(deny(warnings)))))]
+#![cfg_attr(finchers_deny_warnings, deny(warnings))]
+#![cfg_attr(finchers_deny_warnings, doc(test(attr(deny(warnings)))))]
 
 extern crate bytes;
 extern crate failure;

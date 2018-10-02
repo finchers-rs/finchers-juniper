@@ -18,25 +18,37 @@ matrix:
 
   include:
     - rust: stable
+      env: RUSTFLAGS="--cfg finchers_deny_warnings"
+      sudo: required
+      addons:
+        apt:
+          packages:
+            - libcurl4-openssl-dev
+            - libelf-dev
+            - libdw-dev
+            - binutils-dev
       before_script:
         - rustup component add rustfmt-preview
-        - export CARGO_INCREMENTAL=0
+        - cargo install cargo-update || true
+        - cargo install cargo-kcov || true
+        - cargo install-update -a
       script:
         - cargo update
         - cargo test
         - cargo fmt -- --check
         - if [[ "${TRAVIS_PULL_REQUEST_BRANCH:-}" = release-* ]]; then cargo publish --dry-run; fi
+      after_success:
+        - unset RUSTFLAGS
+        - cargo kcov --print-install-kcov-sh | sh
+        - cargo kcov -v --coveralls
 
     - rust: beta
-      before_script:
-        - export CARGO_INCREMENTAL=0
+      env: RUSTFLAGS="--cfg finchers_deny_warnings"
       script:
         - cargo update
         - cargo test
 
     - rust: nightly
-      before_script:
-        - export CARGO_INCREMENTAL=0
       script:
         - cargo update
         - cargo test
@@ -47,6 +59,7 @@ matrix:
       script:
         - rm -rf target/doc
         - cargo update
+        - cargo doc --no-deps -p juniper
         - cargo doc --no-deps
         - rm -f target/doc/.lock
         - echo '<meta http-equiv="refresh" content="0;URL=finchers_juniper/index.html">' > target/doc/index.html
