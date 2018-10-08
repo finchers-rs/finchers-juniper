@@ -39,5 +39,7 @@ fn main() {
         .wrap(execute::with_spawner(schema, CpuPool::new_num_cpus()));
 
     info!("Listening on http://127.0.0.1:4000/");
-    finchers::launch(graphql_endpoint).start("127.0.0.1:4000");
+    finchers::server::start(graphql_endpoint)
+        .serve("127.0.0.1:4000")
+        .unwrap_or_else(|err| error!("{}", err));
 }

@@ -32,8 +32,9 @@ fn main() -> Fallible<()> {
     let endpoint = graphql_endpoint.or(graphiql_endpoint);
 
     info!("Listening on http://127.0.0.1:4000");
-    finchers::launch(endpoint).start("127.0.0.1:4000");
-    Ok(())
+    finchers::server::start(endpoint)
+        .serve("127.0.0.1:4000")
+        .map_err(Into::into)
 }
 
 /// The implelentation of business logic.

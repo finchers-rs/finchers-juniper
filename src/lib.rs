@@ -45,7 +45,7 @@
 //!     .and(fetch_graphql_context)
 //!     .wrap(finchers_juniper::execute::nonblocking(schema));
 //! # drop(move || {
-//! # finchers::launch(endpoint).start("127.0.0.1:4000");
+//! # finchers::server::start(endpoint).serve("127.0.0.1:4000")
 //! # });
 //! # }
 //! ```
@@ -76,8 +76,6 @@ extern crate serde;
 extern crate http;
 extern crate serde_json;
 extern crate serde_qs;
-extern crate tokio;
-extern crate tokio_threadpool;
 
 pub mod execute;
 pub mod graphiql;

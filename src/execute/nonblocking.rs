@@ -2,17 +2,14 @@ use finchers::endpoint;
 use finchers::endpoint::wrapper::Wrapper;
 use finchers::endpoint::{ApplyContext, ApplyResult, Endpoint, IntoEndpoint};
 use finchers::error::Error;
+use finchers::rt;
 
 use futures::future;
-use futures::future::poll_fn;
-use futures::sync::oneshot;
 use futures::{Future, Poll};
-use tokio::executor::DefaultExecutor;
 
 use juniper::{GraphQLType, RootNode};
 use std::fmt;
 use std::sync::Arc;
-use tokio_threadpool::{blocking, BlockingError};
 
 use request::{GraphQLRequestEndpoint, GraphQLResponse, RequestFuture};
 
@@ -144,7 +141,7 @@ where
     CtxT: 'a,
 {
     inner: future::Join<E::Future, RequestFuture<'a>>,
-    handle: Option<oneshot::SpawnHandle<GraphQLResponse, BlockingError>>,
+    handle: Option<rt::SpawnHandle<GraphQLResponse, Error>>,
     endpoint: &'a NonblockingEndpoint<E, QueryT, MutationT>,
 }
 
@@ -163,20 +160,16 @@ where
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> {
         loop {
             match self.handle {
-                Some(ref mut handle) => {
-                    return handle
-                        .poll()
-                        .map(|x| x.map(|response| (response,)))
-                        .map_err(::finchers::error::fail)
-                }
+                Some(ref mut handle) => return handle.poll().map(|x| x.map(|response| (response,))),
                 None => {
                     let ((context,), (request,)) = try_ready!(self.inner.poll());
 
                     trace!("spawn a GraphQL task using the default executor");
                     let root_node = self.endpoint.root_node.clone();
-                    let future =
-                        poll_fn(move || blocking(|| request.execute(&root_node, &context)));
-                    self.handle = Some(oneshot::spawn(future, &mut DefaultExecutor::current()));
+                    let future = rt::blocking_section(move || -> ::finchers::error::Result<_> {
+                        Ok(request.execute(&root_node, &context))
+                    });
+                    self.handle = Some(rt::spawn_with_handle(future));
                 }
             }
         }
