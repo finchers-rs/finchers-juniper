@@ -6,11 +6,9 @@ use finchers::rt;
 
 use futures::future;
 use futures::{Future, Poll};
-
-use juniper::{GraphQLType, RootNode};
-use std::fmt;
 use std::sync::Arc;
 
+use super::shared::SharedSchema;
 use request::{GraphQLRequestEndpoint, GraphQLResponse, RequestFuture};
 
 /// Create a GraphQL executor from the specified `RootNode`.
@@ -18,106 +16,66 @@ use request::{GraphQLRequestEndpoint, GraphQLResponse, RequestFuture};
 /// The endpoint created by this wrapper will spawn a task which executes the GraphQL queries
 /// after receiving the request, by using tokio's `DefaultExecutor`, and notify the start of
 /// the blocking section by using tokio_threadpool's blocking API.
-pub fn nonblocking<QueryT, MutationT, CtxT>(
-    root_node: RootNode<'static, QueryT, MutationT>,
-) -> Nonblocking<QueryT, MutationT>
+pub fn nonblocking<S>(schema: S) -> Nonblocking<S>
 where
-    QueryT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
-    QueryT::TypeInfo: Send + Sync + 'static,
-    MutationT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
-    MutationT::TypeInfo: Send + Sync + 'static,
-    CtxT: Send + 'static,
+    S: SharedSchema,
 {
-    Nonblocking { root_node }
+    Nonblocking { schema }
 }
 
 #[allow(missing_docs)]
-pub struct Nonblocking<QueryT: GraphQLType, MutationT: GraphQLType> {
-    root_node: RootNode<'static, QueryT, MutationT>,
+#[derive(Debug)]
+pub struct Nonblocking<S> {
+    schema: S,
 }
 
-impl<QueryT, MutationT> fmt::Debug for Nonblocking<QueryT, MutationT>
+impl<'a, S> IntoEndpoint<'a> for Nonblocking<S>
 where
-    QueryT: GraphQLType,
-    MutationT: GraphQLType,
-{
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.debug_struct("Nonblocking").finish()
-    }
-}
-
-impl<'a, QueryT, MutationT> IntoEndpoint<'a> for Nonblocking<QueryT, MutationT>
-where
-    QueryT: GraphQLType<Context = ()> + Send + Sync + 'static,
-    QueryT::TypeInfo: Send + Sync + 'static,
-    MutationT: GraphQLType<Context = ()> + Send + Sync + 'static,
-    MutationT::TypeInfo: Send + Sync + 'static,
+    S: SharedSchema<Context = ()>,
 {
     type Output = (GraphQLResponse,);
-    type Endpoint = NonblockingEndpoint<endpoint::Cloned<()>, QueryT, MutationT>;
+    type Endpoint = NonblockingEndpoint<endpoint::Cloned<()>, S>;
 
     fn into_endpoint(self) -> Self::Endpoint {
         NonblockingEndpoint {
             context: endpoint::cloned(()),
             request: ::request::graphql_request(),
-            root_node: Arc::new(self.root_node),
+            schema: Arc::new(self.schema),
         }
     }
 }
 
-impl<'a, E, QueryT, MutationT, CtxT> Wrapper<'a, E> for Nonblocking<QueryT, MutationT>
+impl<'a, E, S> Wrapper<'a, E> for Nonblocking<S>
 where
-    E: Endpoint<'a, Output = (CtxT,)>,
-    QueryT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
-    QueryT::TypeInfo: Send + Sync + 'static,
-    MutationT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
-    MutationT::TypeInfo: Send + Sync + 'static,
-    CtxT: Send + 'static,
+    E: Endpoint<'a, Output = (S::Context,)>,
+    S: SharedSchema,
 {
     type Output = (GraphQLResponse,);
-    type Endpoint = NonblockingEndpoint<E, QueryT, MutationT>;
+    type Endpoint = NonblockingEndpoint<E, S>;
 
     fn wrap(self, endpoint: E) -> Self::Endpoint {
         NonblockingEndpoint {
             context: endpoint,
             request: ::request::graphql_request(),
-            root_node: Arc::new(self.root_node),
+            schema: Arc::new(self.schema),
         }
     }
 }
 
-pub struct NonblockingEndpoint<E, QueryT: GraphQLType, MutationT: GraphQLType> {
+#[derive(Debug)]
+pub struct NonblockingEndpoint<E, S> {
     context: E,
     request: GraphQLRequestEndpoint,
-    root_node: Arc<RootNode<'static, QueryT, MutationT>>,
+    schema: Arc<S>,
 }
 
-impl<E, QueryT, MutationT> fmt::Debug for NonblockingEndpoint<E, QueryT, MutationT>
+impl<'a, E, S> Endpoint<'a> for NonblockingEndpoint<E, S>
 where
-    E: fmt::Debug,
-    QueryT: GraphQLType,
-    MutationT: GraphQLType,
-{
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("ExecuteEndpoint")
-            .field("context", &self.context)
-            .field("request", &self.request)
-            .finish()
-    }
-}
-
-impl<'a, E, QueryT, MutationT, CtxT> Endpoint<'a> for NonblockingEndpoint<E, QueryT, MutationT>
-where
-    E: Endpoint<'a, Output = (CtxT,)>,
-    QueryT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
-    QueryT::TypeInfo: Send + Sync + 'static,
-    MutationT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
-    MutationT::TypeInfo: Send + Sync + 'static,
-    CtxT: Send + 'static,
+    E: Endpoint<'a, Output = (S::Context,)>,
+    S: SharedSchema,
 {
     type Output = (GraphQLResponse,);
-    type Future = NonblockingFuture<'a, E, QueryT, MutationT, CtxT>;
+    type Future = NonblockingFuture<'a, E, S>;
 
     fn apply(&'a self, cx: &mut ApplyContext<'_>) -> ApplyResult<Self::Future> {
         let context = self.context.apply(cx)?;
@@ -130,29 +88,17 @@ where
     }
 }
 
-#[derive(Debug)]
-pub struct NonblockingFuture<'a, E, QueryT, MutationT, CtxT>
-where
-    E: Endpoint<'a, Output = (CtxT,)>,
-    QueryT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
-    QueryT::TypeInfo: Send + Sync + 'static,
-    MutationT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
-    MutationT::TypeInfo: Send + Sync + 'static,
-    CtxT: 'a,
-{
+#[allow(missing_debug_implementations)]
+pub struct NonblockingFuture<'a, E: Endpoint<'a>, S: 'a> {
     inner: future::Join<E::Future, RequestFuture<'a>>,
     handle: Option<rt::SpawnHandle<GraphQLResponse, Error>>,
-    endpoint: &'a NonblockingEndpoint<E, QueryT, MutationT>,
+    endpoint: &'a NonblockingEndpoint<E, S>,
 }
 
-impl<'a, E, QueryT, MutationT, CtxT> Future for NonblockingFuture<'a, E, QueryT, MutationT, CtxT>
+impl<'a, E, S> Future for NonblockingFuture<'a, E, S>
 where
-    E: Endpoint<'a, Output = (CtxT,)>,
-    QueryT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
-    QueryT::TypeInfo: Send + Sync + 'static,
-    MutationT: GraphQLType<Context = CtxT> + Send + Sync + 'static,
-    MutationT::TypeInfo: Send + Sync + 'static,
-    CtxT: Send + 'static,
+    E: Endpoint<'a, Output = (S::Context,)>,
+    S: SharedSchema,
 {
     type Item = (GraphQLResponse,);
     type Error = Error;
@@ -165,9 +111,9 @@ where
                     let ((context,), (request,)) = try_ready!(self.inner.poll());
 
                     trace!("spawn a GraphQL task using the default executor");
-                    let root_node = self.endpoint.root_node.clone();
+                    let schema = self.endpoint.schema.clone();
                     let future = rt::blocking_section(move || -> ::finchers::error::Result<_> {
-                        Ok(request.execute(&root_node, &context))
+                        Ok(request.execute(schema.as_root_node(), &context))
                     });
                     self.handle = Some(rt::spawn_with_handle(future));
                 }

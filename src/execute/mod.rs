@@ -27,3 +27,136 @@ mod with_spawner;
 pub use self::current_thread::{current_thread, CurrentThread};
 pub use self::nonblocking::{nonblocking, Nonblocking};
 pub use self::with_spawner::{with_spawner, WithSpawner};
+
+pub use self::schema::Schema;
+pub use self::shared::SharedSchema;
+
+// ====
+
+mod schema {
+    use juniper::{GraphQLType, RootNode};
+    use std::rc::Rc;
+    use std::sync::Arc;
+
+    /// Trait representing a GraphQL schema.
+    pub trait Schema: SchemaImpl {}
+
+    impl<QueryT, MutationT, CtxT> Schema for RootNode<'static, QueryT, MutationT>
+    where
+        QueryT: GraphQLType<Context = CtxT>,
+        MutationT: GraphQLType<Context = CtxT>,
+    {}
+    impl<S: Schema> Schema for Box<S> {}
+    impl<S: Schema> Schema for Rc<S> {}
+    impl<S: Schema> Schema for Arc<S> {}
+
+    pub trait SchemaImpl {
+        type Context;
+        type Query: GraphQLType<Context = Self::Context>;
+        type Mutation: GraphQLType<Context = Self::Context>;
+        fn as_root_node(&self) -> &RootNode<'static, Self::Query, Self::Mutation>;
+    }
+
+    impl<QueryT, MutationT, CtxT> SchemaImpl for RootNode<'static, QueryT, MutationT>
+    where
+        QueryT: GraphQLType<Context = CtxT>,
+        MutationT: GraphQLType<Context = CtxT>,
+    {
+        type Context = CtxT;
+        type Query = QueryT;
+        type Mutation = MutationT;
+
+        #[inline]
+        fn as_root_node(&self) -> &RootNode<'static, Self::Query, Self::Mutation> {
+            self
+        }
+    }
+
+    impl<T: Schema> SchemaImpl for Box<T> {
+        type Context = T::Context;
+        type Query = T::Query;
+        type Mutation = T::Mutation;
+
+        #[inline]
+        fn as_root_node(&self) -> &RootNode<'static, Self::Query, Self::Mutation> {
+            (**self).as_root_node()
+        }
+    }
+
+    impl<T: Schema> SchemaImpl for Rc<T> {
+        type Context = T::Context;
+        type Query = T::Query;
+        type Mutation = T::Mutation;
+
+        #[inline]
+        fn as_root_node(&self) -> &RootNode<'static, Self::Query, Self::Mutation> {
+            (**self).as_root_node()
+        }
+    }
+
+    impl<T: Schema> SchemaImpl for Arc<T> {
+        type Context = T::Context;
+        type Query = T::Query;
+        type Mutation = T::Mutation;
+
+        #[inline]
+        fn as_root_node(&self) -> &RootNode<'static, Self::Query, Self::Mutation> {
+            (**self).as_root_node()
+        }
+    }
+}
+
+mod shared {
+    use super::Schema;
+    use juniper::{GraphQLType, RootNode};
+
+    /// A helper trait for representing a `Schema` which can be shared between threads.
+    #[allow(missing_docs)]
+    pub trait SharedSchema: SharedSchemaImpl {}
+
+    impl<S> SharedSchema for S
+    where
+        S: Schema + Send + Sync + 'static,
+        S::Context: Send + 'static,
+        S::Query: Send + Sync + 'static,
+        S::Mutation: Send + Sync + 'static,
+        <S::Query as GraphQLType>::TypeInfo: Send + Sync + 'static,
+        <S::Mutation as GraphQLType>::TypeInfo: Send + Sync + 'static,
+    {}
+
+    pub trait SharedSchemaImpl: Send + Sync + 'static {
+        type Context: Send + 'static;
+        type QueryTypeInfo: Send + Sync + 'static;
+        type MutationTypeInfo: Send + Sync + 'static;
+        type Query: GraphQLType<Context = Self::Context, TypeInfo = Self::QueryTypeInfo>
+            + Send
+            + Sync
+            + 'static;
+        type Mutation: GraphQLType<Context = Self::Context, TypeInfo = Self::MutationTypeInfo>
+            + Send
+            + Sync
+            + 'static;
+        fn as_root_node(&self) -> &RootNode<'static, Self::Query, Self::Mutation>;
+    }
+
+    impl<S> SharedSchemaImpl for S
+    where
+        S: Schema + Send + Sync + 'static,
+        S::Context: Send + 'static,
+        S::Query: Send + Sync + 'static,
+        S::Mutation: Send + Sync + 'static,
+        <S::Query as GraphQLType>::TypeInfo: Send + Sync + 'static,
+        <S::Mutation as GraphQLType>::TypeInfo: Send + Sync + 'static,
+    {
+        type Context = S::Context;
+        type Query = S::Query;
+        type Mutation = S::Mutation;
+        type QueryTypeInfo = <S::Query as GraphQLType>::TypeInfo;
+        type MutationTypeInfo = <S::Mutation as GraphQLType>::TypeInfo;
+
+        #[inline]
+        fn as_root_node(&self) -> &RootNode<'static, Self::Query, Self::Mutation> {
+            self.as_root_node()
+        }
+    }
+}
