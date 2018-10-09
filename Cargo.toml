@@ -1,6 +1,6 @@
 [package]
 name = "finchers-juniper"
-version = "0.1.1" # remember to update html_root_url
+version = "0.2.0"
 authors = ["Yusuke Sasaki <yusuke.sasaki.nuem@gmail.com>"]
 description = """
 A set of extensions for supporting Juniper integration.
@@ -44,3 +44,4 @@ pretty_env_logger = "0.2.4"
 juniper = { version = "0.10.0", features = ["expose-test-schema", "serde_json"] }
 futures-cpupool = "0.1.8"
 matches = "0.1.8"
+cargo-husky = "1.0.1"
