@@ -77,6 +77,10 @@ extern crate http;
 extern crate serde_json;
 extern crate serde_qs;
 
+#[cfg(test)]
+#[macro_use]
+extern crate matches;
+
 pub mod execute;
 pub mod graphiql;
 pub mod request;
