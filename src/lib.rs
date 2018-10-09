@@ -59,8 +59,8 @@
     unused,
 )]
 // #![warn(rust_2018_compatibility)]
-#![cfg_attr(finchers_deny_warnings, deny(warnings))]
-#![cfg_attr(finchers_deny_warnings, doc(test(attr(deny(warnings)))))]
+#![cfg_attr(test, deny(warnings))]
+#![cfg_attr(test, doc(test(attr(deny(warnings)))))]
 
 extern crate bytes;
 extern crate failure;
