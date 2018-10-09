@@ -230,3 +230,64 @@ impl Output for GraphQLResponse {
             .expect("should be a valid response"))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use finchers::test;
+    use http::Request;
+
+    use super::{graphql_request, GraphQLRequest, GraphQLRequestKind};
+
+    #[test]
+    fn test_get_request() {
+        let mut runner = test::runner(graphql_request());
+        assert_matches!(
+            runner.apply(Request::get("/?query={{}}")),
+            Ok(GraphQLRequest(GraphQLRequestKind::Single(..)))
+        );
+    }
+
+    #[test]
+    fn test_json_request() {
+        let mut runner = test::runner(graphql_request());
+        assert_matches!(
+            runner.apply(
+                Request::post("/")
+                    .header("content-type", "application/json")
+                    .body(r#"{ "query": "{ apiVersion }" }"#),
+            ),
+            Ok(GraphQLRequest(GraphQLRequestKind::Single(..)))
+        );
+    }
+
+    #[test]
+    fn test_batch_json_request() {
+        let mut runner = test::runner(graphql_request());
+        assert_matches!(
+            runner.apply(
+                Request::post("/")
+                    .header("content-type", "application/json")
+                    .body(
+                        r#"[
+                      { "query": "{ apiVersion }" },
+                      { "query": "{ me { id } }" }
+                    ]"#,
+                    ),
+            ),
+            Ok(GraphQLRequest(GraphQLRequestKind::Batch(..)))
+        );
+    }
+
+    #[test]
+    fn test_graphql_request() {
+        let mut runner = test::runner(graphql_request());
+        assert_matches!(
+            runner.apply(
+                Request::post("/")
+                    .header("content-type", "application/graphql")
+                    .body(r#"{ apiVersion }"#),
+            ),
+            Ok(GraphQLRequest(GraphQLRequestKind::Single(..)))
+        );
+    }
+}

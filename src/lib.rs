@@ -59,8 +59,8 @@
     unused,
 )]
 // #![warn(rust_2018_compatibility)]
-#![cfg_attr(finchers_deny_warnings, deny(warnings))]
-#![cfg_attr(finchers_deny_warnings, doc(test(attr(deny(warnings)))))]
+#![cfg_attr(test, deny(warnings))]
+#![cfg_attr(test, doc(test(attr(deny(warnings)))))]
 
 extern crate bytes;
 extern crate failure;
@@ -76,6 +76,10 @@ extern crate serde;
 extern crate http;
 extern crate serde_json;
 extern crate serde_qs;
+
+#[cfg(test)]
+#[macro_use]
+extern crate matches;
 
 pub mod execute;
 pub mod graphiql;
