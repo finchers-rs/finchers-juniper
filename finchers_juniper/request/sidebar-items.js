@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["graphql_request","Create an endpoint which parses a GraphQL request from the client."]],"struct":[["GraphQLRequest","A type representing the decoded GraphQL query obtained by parsing an HTTP request."],["GraphQLRequestEndpoint",""],["GraphQLResponse","A type representing the result from executing a GraphQL query."]]});
