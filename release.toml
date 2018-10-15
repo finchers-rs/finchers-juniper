@@ -10,11 +10,6 @@ replace = "https://deps.rs/crate/finchers-juniper/{{version}}"
 
 [[pre-release-replacements]]
 file = "README.md"
-search = "https://docs.rs/finchers-juniper/[a-z0-9\\.-]+"
-replace = "https://docs.rs/finchers-juniper/{{version}}"
-
-[[pre-release-replacements]]
-file = "README.md"
 search = "finchers-juniper = \"[a-z0-9\\.-]+\""
 replace = "finchers-juniper = \"{{version}}\""
 
